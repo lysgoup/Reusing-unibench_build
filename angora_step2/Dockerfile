@@ -1,4 +1,4 @@
-FROM unifuzz/unibench:angora_step1
+FROM unifuzz/unibench:angora-recent_step1
 
 RUN cd /unibench/jq-1.5 && ./configure --disable-shared &&\
     make -j &&\
@@ -29,18 +29,52 @@ RUN cd /unibench/SQLite-3.8.9 && ./configure --disable-shared &&\
     cp sqlite3 /d/p/angora/taint/ &&\
     make clean
 
-RUN cd /unibench/binutils-5279478 &&\
-    ./configure --disable-shared &&\
-    for i in bfd libiberty opcodes libctf; do cd $i; ./configure --disable-shared && make -j; cd ..; done  &&\
-    cd binutils  &&\
-    ./configure --disable-shared &&\
-    make nm-new &&\
-    cp nm-new /d/p/angora/fast/nm &&\
-    cd /unibench/binutils-5279478 &&\
-    for i in bfd libiberty opcodes libctf; do cd $i; make clean && USE_TRACK=1 make -j; cd ..; done  &&\
-    cd binutils  && make clean &&\
-    USE_TRACK=1 make nm-new &&\
-    cp nm-new /d/p/angora/taint/nm &&\
+# RUN cd /unibench/binutils-5279478 &&\
+#     ./configure --disable-shared &&\
+#     for i in bfd libiberty opcodes libctf; do cd $i; ./configure --disable-shared && make -j; cd ..; done  &&\
+#     cd binutils  &&\
+#     ./configure --disable-shared &&\
+#     make nm-new &&\
+#     cp nm-new /d/p/angora/fast/nm &&\
+#     cd /unibench/binutils-5279478 &&\
+#     for i in bfd libiberty opcodes libctf; do cd $i; make clean && USE_TRACK=1 make -j; cd ..; done  &&\
+#     cd binutils  && make clean &&\
+#     USE_TRACK=1 make nm-new &&\
+#     cp nm-new /d/p/angora/taint/nm &&\
+#     cd .. && make distclean
+
+RUN cd /unibench/binutils-5279478 && \
+    MAKEINFO=true ./configure \
+      --disable-shared \
+      --disable-werror \
+      --disable-gdb \
+      --disable-gdbserver \
+      --disable-gold && \
+    for i in bfd libiberty opcodes libctf; do \
+        cd $i && \
+        MAKEINFO=true ./configure \
+          --disable-shared \
+          --disable-werror && \
+        make -j && \
+        cd ..; \
+    done && \
+    cd binutils && \
+    MAKEINFO=true ./configure \
+      --disable-shared \
+      --disable-werror && \
+    make nm-new && \
+    cp nm-new /d/p/angora/fast/nm && \
+    cd /unibench/binutils-5279478 && \
+    for i in bfd libiberty opcodes libctf; do \
+        cd $i && \
+        make clean && \
+        USE_TRACK=1 make -j && \
+        cd ..; \
+    done && \
+    cd binutils && \
+    make clean && \
+    USE_TRACK=1 make nm-new && \
+    cp nm-new /d/p/angora/taint/nm && \
     cd .. && make distclean
 
 RUN ls -alh /d/p/angora/*
