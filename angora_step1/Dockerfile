@@ -21,8 +21,11 @@ RUN git clone https://github.com/UNIFUZZ/unibench /unibench &&\
     mv SQLite-8a8ffc86 SQLite-3.8.9 && mv binutils_5279478 binutils-5279478 && mv libtiff-Release-v3-9-7 libtiff-3.9.7 &&\
     ls -alh
 
+ARG DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Seoul
+
 RUN mkdir -p /d/p/angora/taint /d/p/angora/fast &&\
-    apt update && apt install -y nasm libglib2.0-dev gtk-doc-tools libtiff-dev libpng-dev tcl-dev
+    apt update && apt install -y nasm libglib2.0-dev gtk-doc-tools libtiff-dev libpng-dev tcl-dev autoconf automake libtool gettext autopoint
 
 COPY --from=unifuzz/unibench:gcc  /d/p/normal /d/p/normal
 
@@ -34,12 +37,12 @@ RUN cd /unibench/exiv2-0.26 && cmake -DEXIV2_ENABLE_SHARED=OFF . && make -j && c
     make clean && USE_TRACK=1 make -j && cp bin/exiv2 /d/p/angora/taint/ &&\
     make clean
 
-RUN cd /unibench/gdk-pixbuf-2.31.1 &&\
-    ./autogen.sh --enable-static=yes --enable-shared=no --with-included-loaders=yes && make -j &&\
-    cp gdk-pixbuf/gdk-pixbuf-pixdata /d/p/angora/fast/ &&\
-    make clean && USE_TRACK=1 make -j &&\
-    cp gdk-pixbuf/gdk-pixbuf-pixdata /d/p/angora/taint/ &&\
-    make clean
+# RUN cd /unibench/gdk-pixbuf-2.31.1 &&\
+#     ./autogen.sh --enable-static=yes --enable-shared=no --with-included-loaders=yes && make -j &&\
+#     cp gdk-pixbuf/gdk-pixbuf-pixdata /d/p/angora/fast/ &&\
+#     make clean && USE_TRACK=1 make -j &&\
+#     cp gdk-pixbuf/gdk-pixbuf-pixdata /d/p/angora/taint/ &&\
+#     make clean
 
 RUN cd /unibench/jhead-3.00 &&\
     make -j &&\

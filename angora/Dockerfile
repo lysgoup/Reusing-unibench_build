@@ -1,10 +1,10 @@
 FROM unifuzz/unibench:angora-recent_step2
 RUN apt-get update && apt-get install -y flex bison
 
-RUN cd /unibench/binutils-2.28 && ./configure --disable-shared &&\
-    make -j &&\
+RUN cd /unibench/binutils-2.28 && ./configure --disable-shared LEXLIB= &&\
+    make -j LEXLIB= &&\
     cp binutils/objdump /d/p/angora/fast/ &&\
-    make clean && USE_TRACK=1 ASAN_OPTIONS="detect_leaks=0" make -j &&\
+    make clean && USE_TRACK=1 ASAN_OPTIONS="detect_leaks=0" make -j LEXLIB= &&\
     cp binutils/objdump /d/p/angora/taint/ &&\
     make clean
 
@@ -33,12 +33,12 @@ RUN cd /unibench/jasper-2.0.12 && cmake -DJAS_ENABLE_SHARED=OFF -DALLOW_IN_SOURC
     make clean
 
 # Copy libpng build script
-COPY targets/libpng/build_readpng_for_angora.sh /tmp/build_readpng_for_angora.sh
+COPY target/libpng /unibench/libpng
 
 # Build libpng for Angora
-RUN cd /tmp && git clone -b master https://github.com/pnggroup/libpng.git && cd libpng && cp /tmp/build_readpng_for_angora.sh . &&\
-    bash build_readpng_for_angora.sh &&\
-    cp angora-out/readpng_angora.fast /d/p/angora/fast/readpng &&\
-    cp angora-out/readpng_angora.taint /d/p/angora/taint/readpng
+RUN cd /unibench/libpng && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
+    bash build_for_angora.sh &&\
+    cp angora-out/libpng_angora.fast /d/p/angora/fast/libpng_read_fuzzer &&\
+    cp angora-out/libpng_angora.taint /d/p/angora/taint/libpng_read_fuzzer
 
 RUN ls -alh /d/p/angora/*

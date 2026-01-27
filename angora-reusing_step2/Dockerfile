@@ -1,20 +1,20 @@
 FROM unifuzz/unibench:angora-reusing_step1
 
-RUN cd /unibench/jq-1.5 && ./configure --disable-shared &&\
+RUN cd /unibench/jq-1.5 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./configure --disable-shared &&\
     make -j &&\
     cp jq /d/p/angora/fast/ &&\
     make clean && USE_TRACK=1 make -j &&\
     cp jq /d/p/angora/taint/ &&\
     make clean
 
-RUN cd /unibench/mujs-1.0.2 &&\
+RUN cd /unibench/mujs-1.0.2 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     build=debug make -j &&\
     cp build/debug/mujs /d/p/angora/fast/ &&\
     make clean && sleep 3 && USE_TRACK=1 build=debug make -j &&\
     cp build/debug/mujs /d/p/angora/taint/ &&\
     make clean
 
-RUN cd /unibench/xpdf-4.00 && cmake . &&\
+RUN cd /unibench/xpdf-4.00 && export ANGORA_PASS_LOG_DIR=$(pwd) && cmake . &&\
     make -j &&\
     cp xpdf/pdftotext /d/p/angora/fast/ &&\
     make clean && USE_TRACK=1 make -j &&\
@@ -22,7 +22,7 @@ RUN cd /unibench/xpdf-4.00 && cmake . &&\
     make clean
 
 #--disable-amalgamation can be used for coverage build
-RUN cd /unibench/SQLite-3.8.9 && ./configure --disable-shared &&\ 
+RUN cd /unibench/SQLite-3.8.9 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./configure --disable-shared &&\ 
     make -j &&\
     cp sqlite3 /d/p/angora/fast/ &&\
     make clean && USE_TRACK=1 ASAN_OPTIONS="detect_leaks=0" make -j &&\
@@ -43,7 +43,7 @@ RUN cd /unibench/SQLite-3.8.9 && ./configure --disable-shared &&\
 #     cp nm-new /d/p/angora/taint/nm &&\
 #     cd .. && make distclean
 
-RUN cd /unibench/binutils-5279478 && \
+RUN cd /unibench/binutils-5279478 && export ANGORA_PASS_LOG_DIR=$(pwd) && \
     MAKEINFO=true ./configure \
       --disable-shared \
       --disable-werror \

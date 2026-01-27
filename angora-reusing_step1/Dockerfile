@@ -21,8 +21,11 @@ RUN git clone https://github.com/UNIFUZZ/unibench /unibench &&\
     mv SQLite-8a8ffc86 SQLite-3.8.9 && mv binutils_5279478 binutils-5279478 && mv libtiff-Release-v3-9-7 libtiff-3.9.7 &&\
     ls -alh
 
+ARG DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Seoul
+
 RUN mkdir -p /d/p/angora/taint /d/p/angora/fast &&\
-    apt update && apt install -y nasm libglib2.0-dev gtk-doc-tools libtiff-dev libpng-dev tcl-dev
+    apt update && apt install -y nasm libglib2.0-dev gtk-doc-tools libtiff-dev libpng-dev tcl-dev autoconf automake libtool gettext autopoint
 
 COPY --from=unifuzz/unibench:gcc  /d/p/normal /d/p/normal
 
@@ -30,39 +33,39 @@ RUN ldd /d/p/normal/*|grep .so|awk '{print $3}'|grep .so|sort|uniq|sed 's#^/lib#
 
 ENV ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt
 
-RUN cd /unibench/exiv2-0.26 && cmake -DEXIV2_ENABLE_SHARED=OFF . && make -j && cp bin/exiv2 /d/p/angora/fast/ &&\
+RUN cd /unibench/exiv2-0.26 && export ANGORA_PASS_LOG_DIR=$(pwd) && cmake -DEXIV2_ENABLE_SHARED=OFF . && make -j && cp bin/exiv2 /d/p/angora/fast/ &&\
     make clean && USE_TRACK=1 make -j && cp bin/exiv2 /d/p/angora/taint/ &&\
     make clean
 
-RUN cd /unibench/gdk-pixbuf-2.31.1 &&\
-    ./autogen.sh --enable-static=yes --enable-shared=no --with-included-loaders=yes && make -j &&\
-    cp gdk-pixbuf/gdk-pixbuf-pixdata /d/p/angora/fast/ &&\
-    make clean && USE_TRACK=1 make -j &&\
-    cp gdk-pixbuf/gdk-pixbuf-pixdata /d/p/angora/taint/ &&\
-    make clean
+# RUN cd /unibench/gdk-pixbuf-2.31.1 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
+#     ./autogen.sh --enable-static=yes --enable-shared=no --with-included-loaders=yes && make -j &&\
+#     cp gdk-pixbuf/gdk-pixbuf-pixdata /d/p/angora/fast/ &&\
+#     make clean && USE_TRACK=1 make -j &&\
+#     cp gdk-pixbuf/gdk-pixbuf-pixdata /d/p/angora/taint/ &&\
+#     make clean
 
-RUN cd /unibench/jhead-3.00 &&\
+RUN cd /unibench/jhead-3.00 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     make -j &&\
     cp jhead /d/p/angora/fast/ &&\
     make clean && USE_TRACK=1 make -j &&\
     cp jhead /d/p/angora/taint/ &&\
     make clean
 
-RUN cd /unibench/libtiff-3.9.7 && ./autogen.sh && ./configure --disable-shared &&\
+RUN cd /unibench/libtiff-3.9.7 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./autogen.sh && ./configure --disable-shared &&\
     make -j &&\
     cp tools/tiffsplit /d/p/angora/fast/ &&\
     make clean && USE_TRACK=1 make -j &&\
     cp tools/tiffsplit /d/p/angora/taint/ &&\
     make clean
 
-RUN cd /unibench/lame-3.99.5 && ./configure --disable-shared &&\
+RUN cd /unibench/lame-3.99.5 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./configure --disable-shared &&\
     make -j &&\
     cp frontend/lame /d/p/angora/fast/ &&\
     make clean && USE_TRACK=1 make -j &&\
     cp frontend/lame /d/p/angora/taint/ &&\
     make clean
 
-RUN cd /unibench/mp3gain-1.5.2 && sed -i 's/CC=/CC?=/' Makefile &&\
+RUN cd /unibench/mp3gain-1.5.2 && export ANGORA_PASS_LOG_DIR=$(pwd) && sed -i 's/CC=/CC?=/' Makefile &&\
     make -j &&\
     cp mp3gain /d/p/angora/fast/ &&\
     make clean && USE_TRACK=1 make -j &&\
@@ -79,6 +82,7 @@ RUN cd /unibench/mp3gain-1.5.2 && sed -i 's/CC=/CC?=/' Makefile &&\
 #     make clean
 
 RUN cd /unibench/swftools-0.9.2/ && \
+    export ANGORA_PASS_LOG_DIR=$(pwd) && \
     CFLAGS="-fcommon" CXXFLAGS="-fcommon" ./configure && \
     sed -i 's/int inline ActionTagSize/int ActionTagSize/' ./lib/modules/swfaction.c && \
     sed -i 's/byte inline PaethPredictor/byte PaethPredictor/' ./src/png2swf.c && \
@@ -89,28 +93,28 @@ RUN cd /unibench/swftools-0.9.2/ && \
     cp src/wav2swf /d/p/angora/taint/ && \
     make clean
 
-RUN cd /unibench/flvmeta-1.2.1 && cmake . &&\
+RUN cd /unibench/flvmeta-1.2.1 && export ANGORA_PASS_LOG_DIR=$(pwd) && cmake . &&\
     make -j &&\
     cp src/flvmeta /d/p/angora/fast/ &&\
     make clean && USE_TRACK=1 make -j &&\
     cp src/flvmeta /d/p/angora/taint/ &&\
     make clean
 
-RUN cd /unibench/Bento4-1.5.1-628 && cmake . &&\
+RUN cd /unibench/Bento4-1.5.1-628 && export ANGORA_PASS_LOG_DIR=$(pwd) && cmake . &&\
     make -j &&\
     cp mp42aac /d/p/angora/fast/ &&\
     make clean && USE_TRACK=1 make -j &&\
     cp mp42aac /d/p/angora/taint/ &&\
     make clean
 
-RUN cd /unibench/cflow-1.6 && ./configure &&\
+RUN cd /unibench/cflow-1.6 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./configure &&\
     make -j &&\
     cp src/cflow /d/p/angora/fast/ &&\
     make clean && USE_TRACK=1 make -j &&\
     cp src/cflow /d/p/angora/taint/ &&\
     make clean
 
-RUN cd /unibench/ncurses-6.1 && ./configure --disable-shared &&\
+RUN cd /unibench/ncurses-6.1 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./configure --disable-shared &&\
     make -j &&\
     cp progs/tic /d/p/angora/fast/infotocap &&\
     make clean && USE_TRACK=1 ASAN_OPTIONS="detect_leaks=0" make -j &&\
