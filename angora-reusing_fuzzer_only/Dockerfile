@@ -9,8 +9,9 @@ ENV RUSTUP_HOME=/usr/local/rustup \
     CC= \
     CXX=
 
-COPY . angora
-WORKDIR angora
+COPY fuzzer angora/fuzzer
+COPY build angora/build
+WORKDIR /angora
 
 RUN ./build/build.sh
 

@@ -1,4 +1,4 @@
-FROM unifuzz/unibench:angora-recent_step1
+FROM unifuzz/unibench:angora_step1
 
 RUN cd /unibench/jq-1.5 && ./configure --disable-shared &&\
     make -j &&\
