@@ -1,4 +1,4 @@
-FROM unifuzz/unibench:angora-recent_step2
+FROM unifuzz/unibench:angora_step2
 RUN apt-get update && apt-get install -y flex bison
 
 RUN cd /unibench/binutils-2.28 && ./configure --disable-shared LEXLIB= &&\
