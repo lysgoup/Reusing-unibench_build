@@ -22,18 +22,21 @@ get_var_or_default() {
     pattern=$(join_by _ "${@}")
 
     name="$(eval echo ${pattern})"
+    name="${name//-/_}"
     name="${name}[@]"
     value="${!name}"
     if [ -z "$value" ] || [ ${#value[@]} -eq 0 ]; then
         set -- "DEFAULT" "${@:2}"
         pattern=$(join_by _ "${@}")
         name="$(eval echo ${pattern})"
+        name="${name//-/_}"
         name="${name}[@]"
         value="${!name}"
         if [ -z "$value" ] || [ ${#value[@]} -eq 0 ]; then
             set -- "${@:2}"
             pattern=$(join_by _ "${@}")
             name="$(eval echo ${pattern})"
+            name="${name//-/_}"
             name="${name}[@]"
             value="${!name}"
         fi

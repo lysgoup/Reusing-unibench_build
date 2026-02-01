@@ -1,0 +1,3 @@
+[submodule "tools/volume/seeds"]
+	path = tools/volume/seeds
+	url = https://github.com/unifuzz/seeds.git

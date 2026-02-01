@@ -56,6 +56,142 @@ shopt -u nullglob
 export MUX_TAR=unibench_tar
 export MUX_CID=unibench_cid
 
+get_next_cid()
+{
+    ##
+    # Pre-requirements:
+    # - $1: the directory where campaigns are stored
+    ##
+    shopt -s nullglob
+    campaigns=("$1"/*)
+    if [ ${#campaigns[@]} -eq 0 ]; then
+        echo 0
+        dir="$1/0"
+    else
+        cids=($(sort -n < <(basename -a "${campaigns[@]}")))
+        for ((i=0;;i++)); do
+            if [ -z ${cids[i]} ] || [ ${cids[i]} -ne $i ]; then
+                echo $i
+                dir="$1/$i"
+                break
+            fi
+        done
+    fi
+    # ensure the directory is created to prevent races
+    mkdir -p "$dir"
+    while [ ! -d "$dir" ]; do sleep 1; done
+}
+export -f get_next_cid
+
+mutex()
+{
+    ##
+    # Pre-requirements:
+    # - $1: the mutex ID (file descriptor)
+    # - $2..N: command to run
+    ##
+    trap 'rm -f "$LOCKDIR/$mux"' EXIT
+    mux=$1
+    shift
+    (
+      flock -xF 200 &> /dev/null
+      "${@}"
+    ) 200>"$LOCKDIR/$mux"
+}
+export -f mutex
+
+start_campaign()
+{
+    launch_campaign()
+    {
+        export SHARED="$CAMPAIGN_CACHEDIR/$CACHECID"
+        mkdir -p "$SHARED" && chmod 777 "$SHARED"
+
+        echo_time "Container unifuzz/unibench:$FUZZER/$TARGET/$ARCID started on CPU $AFFINITY"
+        "$UNIBENCH"/tools/start.sh &> \
+            "${LOGDIR}/${FUZZER}_${TARGET}_${ARCID}.log"
+        echo_time "Container $FUZZER/$TARGET/$ARCID stopped"
+
+        # overwrites empty $ARCID directory with the $SHARED directory
+        mv -T "$SHARED" "${CAMPAIGN_ARDIR}/${ARCID}"
+    }
+    export -f launch_campaign
+
+    while : ; do
+        export CAMPAIGN_CACHEDIR="$CACHEDIR/$FUZZER/$TARGET"
+        export CACHECID=$(mutex $MUX_CID \
+                get_next_cid "$CAMPAIGN_CACHEDIR")
+        export CAMPAIGN_ARDIR="$ARDIR/$FUZZER/$TARGET"
+        export ARCID=$(mutex $MUX_CID \
+                get_next_cid "$CAMPAIGN_ARDIR")
+
+        errno_lock=69
+        SHELL=/bin/bash flock -xnF -E $errno_lock "${CAMPAIGN_CACHEDIR}/${CACHECID}" \
+            flock -xnF -E $errno_lock "${CAMPAIGN_ARDIR}/${ARCID}" \
+                -c launch_campaign || \
+        if [ $? -eq $errno_lock ]; then
+            continue
+        fi
+        break
+    done
+}
+export -f start_campaign
+
+start_ex()
+{
+    release_workers()
+    {
+        IFS=','
+        read -a workers <<< "$AFFINITY"
+        unset IFS
+        for i in "${workers[@]}"; do
+            rm -rf "$LOCKDIR/unibench_cpu_$i"
+        done
+    }
+    trap release_workers EXIT
+
+    start_campaign
+    exit 0
+}
+export -f start_ex
+
+allocate_workers()
+{
+    ##
+    # Pre-requirements:
+    # - env NUMWORKERS
+    # - env WORKERSET
+    ##
+    cleanup()
+    {
+        IFS=','
+        read -a workers <<< "$WORKERSET"
+        unset IFS
+        for i in "${workers[@]:1}"; do
+            rm -rf "$LOCKDIR/unibench_cpu_$i"
+        done
+        exit 0
+    }
+    trap cleanup SIGINT
+
+    while [ $NUMWORKERS -gt 0 ]; do
+        for i in $WORKER_POOL; do
+            if ( set -o noclobber; > "$LOCKDIR/unibench_cpu_$i" ) &>/dev/null; then
+                export WORKERSET="$WORKERSET,$i"
+                export NUMWORKERS=$(( NUMWORKERS - 1 ))
+                allocate_workers
+                return
+            fi
+        done
+        # This times-out every 1 second to force a refresh, since a worker may
+        #   have been released by the time inotify instance is set up.
+        inotifywait -qq -t 1 -e delete "$LOCKDIR" &> /dev/null
+    done
+    cut -d',' -f2- <<< $WORKERSET
+}
+export -f allocate_workers
+
+
 # 어떤 이유로든 스크립트 종료시 호출될 함수
 cleanup()
 {
@@ -83,9 +219,23 @@ for FUZZER in "${FUZZERS[@]}"; do
     echo_time "Building $IMG_NAME"
 
     if "$UNIBENCH"/tools/build.sh &> "${LOGDIR}/${FUZZER}_build.log"; then
-        BUILT_PAIRS+=("${FUZZER}")
+        BUILT_FUZZER+=("${FUZZER}")
     else
         echo_time "Failed to build $IMG_NAME. Check build log for info."
     fi
 done
 
+for FUZZER in "${BUILT_FUZZER[@]}"; do
+    export FUZZER
+    TARGETS=($(get_var_or_default $FUZZER 'TARGETS'))
+    for TARGET in "${TARGETS[@]}"; do
+        export TARGET
+        export ARGS="$(get_var_or_default "$FUZZER" "$TARGET" 'ARGS')"
+        echo_time "Starting campaigns for $TARGET $ARGS"
+        for ((i=0; i<REPEAT; i++)); do
+            export NUMWORKERS="$(get_var_or_default "$FUZZER" 'CAMPAIGN_WORKERS')"
+            export AFFINITY="$(allocate_workers)"
+            start_ex &
+        done
+    done
+done
