@@ -6,9 +6,10 @@ RUN apt-get update && apt-get install -y unzip git build-essential sudo
 ARG USER_ID=1009
 ARG GROUP_ID=1009
 
+RUN mkdir /volume
 RUN groupadd -g ${GROUP_ID} user && \
     useradd -l -u ${USER_ID} -K UMASK=0000 -d /data -g user user && \
-    chown user:user /data
+    chown user:user /volume
 
 RUN echo "user:user" | chpasswd && usermod -a -G sudo user
 

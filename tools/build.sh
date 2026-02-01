@@ -30,14 +30,20 @@ elif [ "$FUZZER" = "angora-reusing" ]; then
     LLVM_HASH=$(tar -cf - "$UNIBENCH/../llvm_mode" 2>/dev/null | sha256sum | cut -d' ' -f1)
     # 캐시 디렉토리 및 파일 확인
     CACHE_DIR="$UNIBENCH/../_build_cache"
-    if [ ! -d "$CACHE_DIR" ] || [ ! -f "$CACHE_DIR/llvm.hash" ] || [ ! -f "$CACHE_DIR/fuzzer.hash" ]; then
-        echo_time "Cache miss: rebuilding from scratch"
-        CACHED_LLVM_HASH=""
-        CACHED_FUZZER_HASH=""
-        mkdir -p "$CACHE_DIR"
+    mkdir -p "$CACHE_DIR"
+    CACHED_LLVM_HASH=""
+    CACHED_FUZZER_HASH=""
+
+    # cache miss only if BOTH hashes are missing
+    if [ ! -f "$CACHE_DIR/llvm.hash" ] && [ ! -f "$CACHE_DIR/fuzzer.hash" ]; then
+        echo_time "Cache miss: no llvm.hash and no fuzzer.hash. Full rebuild required."
     else
-        CACHED_LLVM_HASH=$(cat "$CACHE_DIR/llvm.hash")
-        CACHED_FUZZER_HASH=$(cat "$CACHE_DIR/fuzzer.hash")
+        if [ -f "$CACHE_DIR/llvm.hash" ]; then
+            CACHED_LLVM_HASH=$(cat "$CACHE_DIR/llvm.hash")
+        fi
+        if [ -f "$CACHE_DIR/fuzzer.hash" ]; then
+            CACHED_FUZZER_HASH=$(cat "$CACHE_DIR/fuzzer.hash")
+        fi
     fi
 
     # llvm_mode 변경 여부 확인

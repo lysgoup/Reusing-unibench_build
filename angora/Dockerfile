@@ -41,4 +41,7 @@ RUN cd /unibench/libpng && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     cp angora-out/libpng_angora.fast /d/p/angora/fast/libpng_read_fuzzer &&\
     cp angora-out/libpng_angora.taint /d/p/angora/taint/libpng_read_fuzzer
 
+# Install daemontools for multilog
+RUN apt-get update && apt-get install -y daemontools && rm -rf /var/lib/apt/lists/*
+
 RUN ls -alh /d/p/angora/*

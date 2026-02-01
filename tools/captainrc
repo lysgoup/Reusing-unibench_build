@@ -22,7 +22,7 @@ REPEAT=3
 # WORKERS=3
 
 # [WORKER_POOL]: a space-separated list of logical cores to allocate
-WORKER_POOL="100 101 102"
+WORKER_POOL="100 101 102 103 104 105"
 
 # [CAMPAIGN_WORKERS]: number of workers to allocate for a campaign (default: 1)
 # CAMPAIGN_WORKERS=1
@@ -31,13 +31,7 @@ WORKER_POOL="100 101 102"
 # suffixes to indicate duration (s: seconds, m: minutes, h: hours, d: days)
 # (default: 1m)
 # TIMEOUT=24h
-TIMEOUT=15m
-
-# [POLL]: time (in seconds) between polls (default: 5)
-POLL=5
-
-# [NO_ARCHIVE]: if set, campaign workdirs will not be tarballed (default: unset)
-NO_ARCHIVE=1
+TIMEOUT=1m
 
 # [TMPFS_SIZE]: the size of the tmpfs mounted volume. This only applies when
 # CACHE_ON_DISK is not set (default: 50g)
@@ -68,13 +62,15 @@ NO_ARCHIVE=1
 ###
 
 # FUZZERS: an array of fuzzer names (from magma/fuzzers/*) to evaluate
-FUZZERS=(aflplusplus angora)
+FUZZERS=(angora-reusing angora)
 
 # [fuzzer_TARGETS]: an array of target names (from magma/targets/*) to fuzz with
 # `fuzzer`. The `fuzzer` prefix is a fuzzer listed in the FUZZERS array
 # (default: all targets)
 # aflplusplus_TARGETS=(libpng libsndfile libxml2 lua openssl php poppler sqlite3)
-aflplusplus_TARGETS=(libxml2)
+aflplusplus_TARGETS=(exiv2)
+angora_TARGETS=(exiv2)
+angora_reusing_TARGETS=(exiv2)
 
 # [fuzzer_target_PROGRAMS]: an array of program names (from
 # magma/targets/target/configrc) to use as execution drivers when fuzzing the

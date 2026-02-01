@@ -1,4 +1,4 @@
-FROM yunseo/angora-original
+FROM yunseo/angora
 ENV CC=/angora/bin/angora-clang
 ENV CXX=/angora/bin/angora-clang++
 RUN apt-get update && apt-get install -y unzip git build-essential sudo
