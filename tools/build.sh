@@ -25,24 +25,29 @@ if [ "$FUZZER" = "angora" ]; then
     set +x
 elif [ "$FUZZER" = "angora-reusing" ]; then
     echo_time "Special build for angora-reusing"
-    # fuzzer와 llvm_mode 폴더의 해시 계산
+    # fuzzer, common, llvm_mode 폴더의 해시 계산
     FUZZER_HASH=$(tar -cf - "$UNIBENCH/../fuzzer" 2>/dev/null | sha256sum | cut -d' ' -f1)
+    COMMON_HASH=$(tar -cf - "$UNIBENCH/../common" 2>/dev/null | sha256sum | cut -d' ' -f1)
     LLVM_HASH=$(tar -cf - "$UNIBENCH/../llvm_mode" 2>/dev/null | sha256sum | cut -d' ' -f1)
     # 캐시 디렉토리 및 파일 확인
     CACHE_DIR="$UNIBENCH/../_build_cache"
     mkdir -p "$CACHE_DIR"
     CACHED_LLVM_HASH=""
     CACHED_FUZZER_HASH=""
+    CACHED_COMMON_HASH=""
 
-    # cache miss only if BOTH hashes are missing
-    if [ ! -f "$CACHE_DIR/llvm.hash" ] && [ ! -f "$CACHE_DIR/fuzzer.hash" ]; then
-        echo_time "Cache miss: no llvm.hash and no fuzzer.hash. Full rebuild required."
+    # cache miss only if all hashes are missing
+    if [ ! -f "$CACHE_DIR/llvm.hash" ] && [ ! -f "$CACHE_DIR/fuzzer.hash" ] && [ ! -f "$CACHE_DIR/common.hash" ]; then
+        echo_time "Cache miss: no hashes found. Full rebuild required."
     else
         if [ -f "$CACHE_DIR/llvm.hash" ]; then
             CACHED_LLVM_HASH=$(cat "$CACHE_DIR/llvm.hash")
         fi
         if [ -f "$CACHE_DIR/fuzzer.hash" ]; then
             CACHED_FUZZER_HASH=$(cat "$CACHE_DIR/fuzzer.hash")
+        fi
+        if [ -f "$CACHE_DIR/common.hash" ]; then
+            CACHED_COMMON_HASH=$(cat "$CACHE_DIR/common.hash")
         fi
     fi
 
@@ -58,12 +63,14 @@ elif [ "$FUZZER" = "angora-reusing" ]; then
         set +x
         echo "$LLVM_HASH" > "$CACHE_DIR/llvm.hash"
         echo "$FUZZER_HASH" > "$CACHE_DIR/fuzzer.hash"
-    elif [ "$FUZZER_HASH" != "$CACHED_FUZZER_HASH" ]; then
-        echo_time "Fuzzer code changed. Rebuilding fuzzer only."
+        echo "$COMMON_HASH" > "$CACHE_DIR/common.hash"
+    elif [ "$FUZZER_HASH" != "$CACHED_FUZZER_HASH" ] || [ "$COMMON_HASH" != "$CACHED_COMMON_HASH" ]; then
+        echo_time "Fuzzer or common code changed. Rebuilding fuzzer only."
         set -x
         docker build -t "$IMG_NAME" -f "$UNIBENCH/angora-reusing_fuzzer_only/Dockerfile" "$UNIBENCH/../"
         set +x
         echo "$FUZZER_HASH" > "$CACHE_DIR/fuzzer.hash"
+        echo "$COMMON_HASH" > "$CACHE_DIR/common.hash"
     else
         echo_time "No changes detected. Skipping build."
     fi
