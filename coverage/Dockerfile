@@ -103,3 +103,6 @@ RUN rm -r /unibench/ffmpeg-4.0.1 &&\
     cp /unibench/ffmpeg-4.0.1/ffmpeg_g /d/p/cov/ffmpeg
 
 RUN ls -alh /d/p/*
+
+# Install lcov and genhtml for coverage measurement
+RUN apt-get update && apt-get install -y lcov && rm -rf /var/lib/apt/lists/*

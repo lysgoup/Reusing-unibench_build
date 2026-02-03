@@ -12,8 +12,9 @@ ENV RUSTUP_HOME=/usr/local/rustup \
 # Install daemontools for multilog
 RUN apt-get update && apt-get install -y daemontools && rm -rf /var/lib/apt/lists/*
 
-COPY fuzzer angora/fuzzer
-COPY build angora/build
+COPY fuzzer /angora/fuzzer
+COPY common /angora/common
+COPY build /angora/build
 WORKDIR /angora
 
 RUN ./build/build.sh

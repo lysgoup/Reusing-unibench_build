@@ -52,6 +52,7 @@ flag_volume="--volume=$SHARED:/unibench_shared"
 if [ ! -z "$SEED" ]; then
     SEED="$(realpath "$SEED")"
     flag_seed_volume="--volume=$SEED:/customized_seed"
+    flag_seed_env="--env=SEED=/customized_seed"
 fi
 
 VOLUME_PATH="$(realpath "$UNIBENCH/tools/volume")"
@@ -69,6 +70,7 @@ if [ -t 1 ]; then
         --env=FUZZER="$FUZZER" --env=TARGET="$TARGET" \
         --env=FUZZARGS="$FUZZARGS" --env=POLL="$POLL" \
         --env=TIMEOUT="$TIMEOUT" \
+        $flag_seed_env \
         $flag_aff $flag_user $flag_ep "$IMG_NAME"
 else
     echo_time "Running in non-interactive mode (no TTY)"
@@ -77,6 +79,7 @@ else
         --cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
         --env=FUZZER="$FUZZER" --env=TARGET="$TARGET" \
         --env=FUZZARGS="$FUZZARGS" --env=POLL="$POLL" --env=TIMEOUT="$TIMEOUT" \
+        $flag_seed_env \
         --network=none \
         $flag_aff $flag_user $flag_ep "$IMG_NAME"
     )
