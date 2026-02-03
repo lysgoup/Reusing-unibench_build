@@ -118,12 +118,17 @@ start_campaign()
     export -f launch_campaign
 
     while : ; do
-        export CAMPAIGN_CACHEDIR="$CACHEDIR/$FUZZER/$TARGET"
-        export CACHECID=$(mutex $MUX_CID \
-                get_next_cid "$CAMPAIGN_CACHEDIR")
         export CAMPAIGN_ARDIR="$ARDIR/$FUZZER/$TARGET"
         export ARCID=$(mutex $MUX_CID \
                 get_next_cid "$CAMPAIGN_ARDIR")
+        export CAMPAIGN_CACHEDIR="$CACHEDIR/$FUZZER/$TARGET"
+        export CACHECID="$ARCID"
+
+        # Create CACHECID directory, delete if exists
+        if [ -d "$CAMPAIGN_CACHEDIR/$CACHECID" ]; then
+            rm -rf "$CAMPAIGN_CACHEDIR/$CACHECID"
+        fi
+        mkdir -p "$CAMPAIGN_CACHEDIR/$CACHECID"
 
         errno_lock=69
         SHELL=/bin/bash flock -xnF -E $errno_lock "${CAMPAIGN_CACHEDIR}/${CACHECID}" \
@@ -231,6 +236,7 @@ for FUZZER in "${BUILT_FUZZER[@]}"; do
     for TARGET in "${TARGETS[@]}"; do
         export TARGET
         export ARGS="$(get_var_or_default "$FUZZER" "$TARGET" 'ARGS')"
+        export SEED="$(get_var_or_default "$TARGET" 'SEED')"
         echo_time "Starting campaigns for $TARGET $ARGS"
         for ((i=0; i<REPEAT; i++)); do
             export NUMWORKERS="$(get_var_or_default "$FUZZER" 'CAMPAIGN_WORKERS')"
