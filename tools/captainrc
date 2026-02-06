@@ -22,8 +22,8 @@ REPEAT=10
 # WORKERS=3
 
 # [WORKER_POOL]: a space-separated list of logical cores to allocate
-WORKER_POOL="$(seq 30 130)"
-#WORKER_POOL="100 101 102 103 104 105 106 107 108 109 110 111 112 113 114 115"
+WORKER_POOL="$(seq 110 130)"
+# WORKER_POOL="110 111 112 113 114 115 116 117 118 119"
 
 # [CAMPAIGN_WORKERS]: number of workers to allocate for a campaign (default: 1)
 # CAMPAIGN_WORKERS=1
@@ -70,8 +70,8 @@ FUZZERS=(angora-reusing angora)
 # (default: all targets)
 # aflplusplus_TARGETS=(libpng libsndfile libxml2 lua openssl php poppler sqlite3)
 aflplusplus_TARGETS=(exiv2)
-angora_TARGETS=(cflow exiv2 imginfo mp3gain)
-angora_reusing_TARGETS=(cflow exiv2 imginfo mp3gain)
+angora_TARGETS=(jq)
+angora_reusing_TARGETS=(jq)
 
 # [fuzzer_target_PROGRAMS]: an array of program names (from
 # magma/targets/target/configrc) to use as execution drivers when fuzzing the
@@ -90,3 +90,4 @@ exiv2_SEED="/home/yunseo/Fuzzing/Reusing/unibench_build/workdir/seeds/general_ev
 imginfo_SEED="/home/yunseo/Fuzzing/Reusing/unibench_build/workdir/seeds/general_evaluation/imginfo_saturated"
 cflow_SEED="/home/yunseo/Fuzzing/Reusing/unibench_build/workdir/seeds/general_evaluation/cflow_saturated"
 mp3gain_SEED="/home/yunseo/Fuzzing/Reusing/unibench_build/workdir/seeds/general_evaluation/mp3_saturated"
+jq_SEED="/home/yunseo/Fuzzing/Reusing/unibench_build/workdir/seeds/general_evaluation/jq_saturated"

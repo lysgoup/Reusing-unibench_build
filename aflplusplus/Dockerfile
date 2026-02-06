@@ -134,3 +134,6 @@ RUN cd /unibench/libpng &&\
     cp afl-out/libpng_read_fuzzer /d/p/aflplusplus/libpng_read_fuzzer
 
 RUN ls -alh /d/p/*
+
+# Install daemontools for multilog
+RUN apt-get update && apt-get install -y daemontools && rm -rf /var/lib/apt/lists/*

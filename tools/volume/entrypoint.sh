@@ -88,7 +88,7 @@ echo "Campaign launched at $(date '+%F %R')"
 echo "Fuzzer: $FUZZER, Target: $TARGET"
 
 # Execute fuzzer with timeout
-timeout --signal=INT $TIMEOUT "$FUZZER_RUN_SCRIPT" | \
+timeout --foreground --signal=INT $TIMEOUT "$FUZZER_RUN_SCRIPT" | \
     multilog n2 s$LOGSIZE "$SHARED/log"
 
 if [ -f "$SHARED/log/current" ]; then
