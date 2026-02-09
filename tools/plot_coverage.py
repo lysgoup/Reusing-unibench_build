@@ -352,7 +352,7 @@ def plot_branch_graphs(graph_dir, data_dir):
 def plot_comparison_graphs(graph_dir, data_dir):
     """
     Generate comparison graphs for targets with multiple fuzzers.
-    Only shows avg lines from different fuzzers for the same target.
+    Shows avg lines with min/max ranges from different fuzzers for the same target.
 
     Args:
         graph_dir: Path to graph directory (output location)
@@ -370,8 +370,8 @@ def plot_comparison_graphs(graph_dir, data_dir):
     if not data_files:
         return
 
-    # Group by target and collect fuzzer avg data
-    target_fuzzers = {}  # {target: {fuzzer: (avg_data, time_points)}}
+    # Group by target and collect fuzzer data (campaign and avg)
+    target_fuzzers = {}  # {target: {fuzzer: {campaign_data, avg_data, time_points}}}
 
     for data_file in data_files:
         # Extract target and fuzzer from filename
@@ -395,29 +395,51 @@ def plot_comparison_graphs(graph_dir, data_dir):
         if not lines:
             continue
 
-        # Parse data to extract avg
+        # Parse data to extract campaign and avg data
+        campaign_data = {}
         avg_data = None
+
         for line in lines:
             line_parts = line.strip().split()
             if not line_parts:
                 continue
 
             label = line_parts[0]
-            if label == 'avg':
-                avg_data = [float(x) for x in line_parts[1:]]
-                break
+            values = [float(x) for x in line_parts[1:]]
 
-        if avg_data is None:
+            if label == 'avg':
+                avg_data = values
+            else:
+                campaign_data[label] = values
+
+        if avg_data is None or not campaign_data:
             continue
 
         # Generate time points (in minutes)
         num_points = len(avg_data)
         time_points = [i * 30 for i in range(num_points)]
 
+        # Calculate min and max values for each time point
+        max_data = []
+        min_data = []
+        for col_idx in range(num_points):
+            col_values = [data[col_idx] for data in campaign_data.values() if col_idx < len(data)]
+            if col_values:
+                max_data.append(max(col_values))
+                min_data.append(min(col_values))
+            else:
+                max_data.append(avg_data[col_idx])
+                min_data.append(avg_data[col_idx])
+
         # Store data
         if target_name not in target_fuzzers:
             target_fuzzers[target_name] = {}
-        target_fuzzers[target_name][fuzzer_name] = (avg_data, time_points)
+        target_fuzzers[target_name][fuzzer_name] = {
+            'avg': avg_data,
+            'max': max_data,
+            'min': min_data,
+            'time_points': time_points
+        }
 
     # Generate comparison graphs for targets with multiple fuzzers
     comparison_count = 0
@@ -431,17 +453,28 @@ def plot_comparison_graphs(graph_dir, data_dir):
         # Create figure
         fig, ax = plt.subplots(figsize=(12, 8))
 
-        # Collect all avg values to determine Y-axis range
+        # Collect all values to determine Y-axis range
         all_values = []
         for fuzzer_name in sorted(fuzzers_data.keys()):
-            avg_data, _ = fuzzers_data[fuzzer_name]
-            all_values.extend(avg_data)
+            data = fuzzers_data[fuzzer_name]
+            all_values.extend(data['max'])
+            all_values.extend(data['min'])
 
-        # Plot each fuzzer's avg in different colors
+        # Plot each fuzzer's data in different colors
         colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'pink', 'gray']
         for idx, fuzzer_name in enumerate(sorted(fuzzers_data.keys())):
-            avg_data, time_points = fuzzers_data[fuzzer_name]
+            data = fuzzers_data[fuzzer_name]
+            avg_data = data['avg']
+            max_data = data['max']
+            min_data = data['min']
+            time_points = data['time_points']
+
             color = colors[idx % len(colors)]
+
+            # Fill between max and min with light color
+            ax.fill_between(time_points, min_data, max_data, color=color, alpha=0.15)
+
+            # Plot average line
             ax.plot(time_points, avg_data, color=color, linewidth=2, label=fuzzer_name, marker='o', markersize=2.5)
 
         # Set Y-axis range based on data with same method as individual graphs
