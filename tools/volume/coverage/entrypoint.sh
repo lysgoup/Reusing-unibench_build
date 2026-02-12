@@ -23,11 +23,21 @@ if [ "$(id -u)" -eq 0 ] && [ "$MEASURE_USER_ID" != "0" ]; then
     echo "[INFO] Running as root, will switch to user $MEASURE_USER_ID for measurements"
 fi
 
-# Check if input directory exists
-if [ ! -d /unibench_shared/findings/queue ]; then
-    echo "[ERROR] Input directory not found: /unibench_shared/findings/queue"
+# Find input directory (handles different fuzzer output structures)
+# Try multiple possible locations
+INPUT_DIR=""
+if [ -d /unibench_shared/findings/queue ]; then
+    INPUT_DIR="/unibench_shared/findings/queue"
+elif [ -d /unibench_shared/findings/default/queue ]; then
+    INPUT_DIR="/unibench_shared/findings/default/queue"
+else
+    echo "[ERROR] Input directory not found in expected locations:"
+    echo "  - /unibench_shared/findings/queue (angora)"
+    echo "  - /unibench_shared/findings/default/queue (aflplusplus)"
     exit 1
 fi
+
+echo "[INFO] Using input directory: $INPUT_DIR"
 
 # Check if coverage output directory is empty
 if [ -d /coverage_out ] && [ -n "$(ls -A /coverage_out 2>/dev/null)" ]; then
@@ -83,7 +93,7 @@ target_source_dir="${!target_source_var}"
 
 echo "[INFO] Coverage measurement started for: $TARGET"
 echo "[INFO] Coverage binary: $COVERAGE_BIN"
-echo "[INFO] Input directory: /unibench_shared/findings/queue"
+echo "[INFO] Input directory: $INPUT_DIR"
 echo "[INFO] Output: /coverage_out"
 echo "[INFO] Measurement interval: 30 minutes"
 echo "[INFO] Target args: ${target_args[*]}"
@@ -111,9 +121,9 @@ while true; do
     fi
 
     # Process all inputs in queue directory
-    if [ -d /unibench_shared/findings/queue ]; then
+    if [ -d "$INPUT_DIR" ]; then
         INPUT_COUNT=0
-        for input_file in /unibench_shared/findings/queue/*; do
+        for input_file in "$INPUT_DIR"/*; do
             [ -f "$input_file" ] || continue
 
             INPUT_COUNT=$((INPUT_COUNT + 1))
@@ -140,7 +150,7 @@ while true; do
         done
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] Processed $INPUT_COUNT inputs"
     else
-        echo "[ERROR] Input directory not found: /unibench_shared/findings/queue"
+        echo "[ERROR] Input directory not found: $INPUT_DIR"
         exit 1
     fi
 
