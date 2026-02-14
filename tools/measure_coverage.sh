@@ -143,8 +143,7 @@ start_coverage()
     local GROUP_ID=$(id -g)
 
     # Container name based on key (replace :: with -)
-    local container_name="${key//::/-}"
-
+    local container_name="${key//::/-}-$(date +%s%N)-cov"
     local container_id=$(
         docker run -d \
             --name="$container_name" \

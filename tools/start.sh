@@ -4,10 +4,9 @@
 # Pre-requirements:
 # - env FUZZER: fuzzer name (from fuzzers/)
 # - env TARGET: target name (from targets/) - args automatically loaded from targets.conf
+# - env SHARED: path to host-local volume where fuzzer findings are saved
 # - env FUZZARGS: fuzzer arguments
-# - env TIMEOUT: time to run the campaign
-# + env SHARED: path to host-local volume where fuzzer findings are saved
-#       (default: no shared volume)
+# + env TIMEOUT: time to run the campaign (optional - if not set, runs indefinitely)
 # + env SEED: path to seed directory (relative or absolute) to mount as /customized_seed
 #       (default: no seed volume)
 # + env AFFINITY: the CPU to bind the container to (default: no affinity)
@@ -24,10 +23,14 @@ cleanup() {
 
 trap cleanup EXIT SIGINT SIGTERM
 
-if [ -z $FUZZER ] || [ -z $TARGET ] || [ -z $TIMEOUT ] || [ -z $SHARED ]; then
-    echo '$FUZZER, $TARGET, $TIMEOUT, and $SHARED must be specified as' \
-         'environment variables.'
+if [ -z $FUZZER ] || [ -z $TARGET ] || [ -z $SHARED ]; then
+    echo '$FUZZER, $TARGET, and $SHARED must be specified as environment variables.'
     exit 1
+fi
+
+# TIMEOUT is optional - if not specified, will run until user stops
+if [ -z $TIMEOUT ]; then
+    echo_time "Note: TIMEOUT not specified, container will run until manually stopped"
 fi
 
 UNIBENCH=${UNIBENCH:-"$(cd "$(dirname "${BASH_SOURCE[0]}")/../" >/dev/null 2>&1 && pwd)"}
@@ -63,25 +66,29 @@ USER_ID=$(id -u)
 GROUP_ID=$(id -g)
 flag_user="-u $USER_ID:$GROUP_ID"
 
+# Container name with timestamp (fuzzer-target-timestamp format)
+container_name="${FUZZER}-${TARGET}-$(date +%s%N)"
+flag_name="--name=$container_name"
+
 if [ -t 1 ]; then
     echo_time "Running in interactive mode (TTY attached)"
     docker run -it $flag_volume $flag_volume_extra $flag_seed_volume \
         --cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
         --env=FUZZER="$FUZZER" --env=TARGET="$TARGET" \
-        --env=FUZZARGS="$FUZZARGS" --env=POLL="$POLL" \
+        --env=FUZZARGS="$FUZZARGS" \
         --env=TIMEOUT="$TIMEOUT" \
         $flag_seed_env \
-        $flag_aff $flag_user $flag_ep "$IMG_NAME"
+        $flag_aff $flag_user $flag_name $flag_ep "$IMG_NAME"
 else
     echo_time "Running in non-interactive mode (no TTY)"
     container_id=$(
     docker run -dt $flag_volume $flag_volume_extra $flag_seed_volume \
         --cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
         --env=FUZZER="$FUZZER" --env=TARGET="$TARGET" \
-        --env=FUZZARGS="$FUZZARGS" --env=POLL="$POLL" --env=TIMEOUT="$TIMEOUT" \
+        --env=FUZZARGS="$FUZZARGS" --env=TIMEOUT="$TIMEOUT" \
         $flag_seed_env \
         --network=none \
-        $flag_aff $flag_user $flag_ep "$IMG_NAME"
+        $flag_aff $flag_user $flag_name $flag_ep "$IMG_NAME"
     )
     container_id=$(cut -c-12 <<< $container_id)
     echo_time "Container for $FUZZER/$TARGET started in $container_id"
