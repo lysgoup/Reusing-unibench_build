@@ -106,3 +106,11 @@ RUN ls -alh /d/p/*
 
 # Install lcov and genhtml for coverage measurement
 RUN apt-get update && apt-get install -y lcov && rm -rf /var/lib/apt/lists/*
+
+# Copy local libpng source (from ../target/libpng)
+COPY target/libpng /unibench/libpng
+
+# Build libpng_read_fuzzer with coverage instrumentation
+RUN cd /unibench/libpng && \
+    chmod +x build_for_coverage.sh && \
+    ./build_for_coverage.sh
