@@ -34,7 +34,13 @@ fi
 export CAMPAIGN_WORKERS=${CAMPAIGN_WORKERS:-1}
 
 export POLL=${POLL:-5}
-export TIMEOUT=${TIMEOUT:-1m}
+# TIMEOUT is optional - if not specified, campaigns run indefinitely until user stops
+export TIMEOUT="${TIMEOUT}"
+
+if [ -z "$TIMEOUT" ]; then
+    echo_time "WARNING: TIMEOUT not specified in captainrc"
+    echo_time "Campaigns will run indefinitely until manually stopped (docker stop/kill)"
+fi
 
 WORKDIR="$(realpath "$WORKDIR")"
 export ARDIR="$WORKDIR/ar"

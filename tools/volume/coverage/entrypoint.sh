@@ -79,16 +79,24 @@ set -a
 source "$TARGETS_CONF"
 set +a
 
-# Get target-specific arguments
-target_args_var="${TARGET}_args[@]"
-target_args=( "${!target_args_var}" )
+# Get target-specific arguments (convert hyphens to underscores for variable lookup)
+TARGET_NORMALIZED="${TARGET//-/_}"
+target_args_var="${TARGET_NORMALIZED}_args[@]"
 
 # Check if target uses stdin redirection
-target_stdin_var="${TARGET}_stdin_from_file"
+target_stdin_var="${TARGET_NORMALIZED}_stdin_from_file"
 target_stdin_from_file="${!target_stdin_var}"
 
+# If args are empty, check if stdin is used
+if [ -z "${!target_args_var}" ] && [ "$target_stdin_from_file" != "1" ]; then
+    echo "[ERROR] No args found for target '$TARGET' in targets.conf, and stdin_from_file is not set"
+    exit 1
+fi
+
+target_args=( "${!target_args_var}" )
+
 # Get target source directory for lcov
-target_source_var="${TARGET}_source_dir"
+target_source_var="${TARGET_NORMALIZED}_source_dir"
 target_source_dir="${!target_source_var}"
 
 echo "[INFO] Coverage measurement started for: $TARGET"
