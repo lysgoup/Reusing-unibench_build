@@ -37,10 +37,13 @@ source "$TARGETS_CONF"
 
 # Extract args for the target (convert hyphens to underscores for variable lookup)
 TARGET_NORMALIZED="${TARGET//-/_}"
-target_args_var="${TARGET_NORMALIZED}_args[@]"
+target_args_var="${TARGET_NORMALIZED}_args"
+
+# Use nameref to properly reference the array
+declare -n target_args_ref="$target_args_var" 2>/dev/null || target_args_ref=()
 
 # Check if args are empty
-if [ -z "${!target_args_var}" ]; then
+if [ ${#target_args_ref[@]} -eq 0 ]; then
     # If args are empty, check if stdin is used instead
     target_stdin_var="${TARGET_NORMALIZED}_stdin_from_file"
     target_stdin_from_file="${!target_stdin_var}"
@@ -56,9 +59,8 @@ else
 
     # Convert array to quoted string for proper export
     # This preserves arguments with spaces when passed to run.sh
-    declare -a ARGS_ARRAY=( "${!target_args_var}" )
     ARGS_STR=""
-    for arg in "${ARGS_ARRAY[@]}"; do
+    for arg in "${target_args_ref[@]}"; do
         ARGS_STR="$ARGS_STR $(printf '%q' "$arg")"
     done
     export ARGS_STR
