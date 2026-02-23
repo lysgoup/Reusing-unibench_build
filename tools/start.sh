@@ -28,14 +28,14 @@ if [ -z $FUZZER ] || [ -z $TARGET ] || [ -z $SHARED ]; then
     exit 1
 fi
 
+UNIBENCH=${UNIBENCH:-"$(cd "$(dirname "${BASH_SOURCE[0]}")/../" >/dev/null 2>&1 && pwd)"}
+export UNIBENCH
+source "$UNIBENCH/tools/common.sh"
+
 # TIMEOUT is optional - if not specified, will run until user stops
 if [ -z $TIMEOUT ]; then
     echo_time "Note: TIMEOUT not specified, container will run until manually stopped"
 fi
-
-UNIBENCH=${UNIBENCH:-"$(cd "$(dirname "${BASH_SOURCE[0]}")/../" >/dev/null 2>&1 && pwd)"}
-export UNIBENCH
-source "$UNIBENCH/tools/common.sh"
 
 IMG_NAME="unifuzz/unibench:$FUZZER"
 
