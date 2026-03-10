@@ -19,11 +19,11 @@ source "$UNIBENCH/tools/common.sh"
 if [ "$FUZZER" = "angora" ]; then
     echo_time "Smart build for angora with hash-based caching"
     # Angora 내부의 fuzzer, common, llvm_mode 폴더의 해시 계산
-    FUZZER_HASH=$(tar -cf - "$UNIBENCH/../Angora/fuzzer" 2>/dev/null | sha256sum | cut -d' ' -f1)
-    COMMON_HASH=$(tar -cf - "$UNIBENCH/../Angora/common" 2>/dev/null | sha256sum | cut -d' ' -f1)
-    LLVM_HASH=$(tar -cf - "$UNIBENCH/../Angora/llvm_mode" 2>/dev/null | sha256sum | cut -d' ' -f1)
+    FUZZER_HASH=$(tar -cf - "$UNIBENCH/../Angora_original/fuzzer" 2>/dev/null | sha256sum | cut -d' ' -f1)
+    COMMON_HASH=$(tar -cf - "$UNIBENCH/../Angora_original/common" 2>/dev/null | sha256sum | cut -d' ' -f1)
+    LLVM_HASH=$(tar -cf - "$UNIBENCH/../Angora_original/llvm_mode" 2>/dev/null | sha256sum | cut -d' ' -f1)
     # 캐시 디렉토리 및 파일 확인
-    CACHE_DIR="$UNIBENCH/../Angora/_build_cache"
+    CACHE_DIR="$UNIBENCH/../Angora_original/_build_cache"
     mkdir -p "$CACHE_DIR"
     CACHED_LLVM_HASH=""
     CACHED_FUZZER_HASH=""
@@ -48,10 +48,10 @@ if [ "$FUZZER" = "angora" ]; then
     if [ "$LLVM_HASH" != "$CACHED_LLVM_HASH" ]; then
         echo_time "llvm_mode changed. Full rebuild from step1."
         set -x
-        docker build -t "yunseo/angora" "$UNIBENCH/../Angora"
+        docker build -t "yunseo/angora" "$UNIBENCH/../Angora_original"
         docker build -t "unifuzz/unibench:angora_step1" "$UNIBENCH/angora_step1"
         docker build -t "unifuzz/unibench:angora_step2" "$UNIBENCH/angora_step2"
-        docker build -t "$IMG_NAME" -f "$UNIBENCH/angora/Dockerfile" "$UNIBENCH/../Angora"
+        docker build -t "$IMG_NAME" -f "$UNIBENCH/angora/Dockerfile" "$UNIBENCH/../Angora_original"
         set +x
         echo "$LLVM_HASH" > "$CACHE_DIR/llvm.hash"
         echo "$FUZZER_HASH" > "$CACHE_DIR/fuzzer.hash"
@@ -59,7 +59,7 @@ if [ "$FUZZER" = "angora" ]; then
     elif [ "$FUZZER_HASH" != "$CACHED_FUZZER_HASH" ] || [ "$COMMON_HASH" != "$CACHED_COMMON_HASH" ]; then
         echo_time "Fuzzer or common code changed. Rebuilding fuzzer only."
         set -x
-        docker build -t "$IMG_NAME" -f "$UNIBENCH/angora_fuzzer_only/Dockerfile" "$UNIBENCH/../Angora"
+        docker build -t "$IMG_NAME" -f "$UNIBENCH/angora_fuzzer_only/Dockerfile" "$UNIBENCH/../Angora_original"
         set +x
         echo "$FUZZER_HASH" > "$CACHE_DIR/fuzzer.hash"
         echo "$COMMON_HASH" > "$CACHE_DIR/common.hash"
