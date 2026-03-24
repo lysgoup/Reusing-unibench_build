@@ -1,0 +1,8 @@
+MIF
+component tlx=0 tly=0 sampperx=5 samppery=2 width=2€ height=1€ prec=9 sgnd=0
+component tlx=0 tly=0 sampperx=2 samppery=4 width=64 height=32 prec=8 sgnd=1
+end
+P5
+03 14
+355
+||||ƒƒƒƒƒ‹‹‹ƒ‹“œœ£¬¬£¬¬¬¬¬¬££œ££|||ƒƒƒƒƒƒƒ‹‹‹‹“œ£¬¬¬¬¬¬¬¬¬¬££££œƒ|ƒ|ƒƒƒƒƒ‹‹‹‹‹“œ£¬´¬BM¬¬¬¬

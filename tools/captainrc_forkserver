@@ -1,0 +1,19 @@
+# captainrc for forkserver_libafl / forkserver_storfuzz experiments
+# Usage: ./run.sh captainrc_forkserver
+
+WORKDIR=../_result
+REPEAT=2
+WORKER_POOL="0 1 2 3 4 5 6 7 8 9 10 11"
+TIMEOUT=24h
+# exiv2    imginfo  jq mp3gain  pdftotext  ||   libpng_read_fuzzer  flvmeta    wav2swf 
+FUZZERS=(forkserver_libafl)
+
+# forkserver_storfuzz_TARGETS=(jq exiv2 sqlite3)
+forkserver_libafl_TARGETS=(exiv2  imginfo  jq mp3gain  pdftotext)
+
+exiv2_SEED="/home/kmg/UNIST/Reusing-unibench_build/tools/seeds/exiv2"
+imginfo_SEED="/home/kmg/UNIST/Reusing-unibench_build/tools/seeds/imginfo"
+mp3gain_SEED="/home/kmg/UNIST/Reusing-unibench_build/tools/seeds/mp3gain"
+jq_SEED="/home/kmg/UNIST/Reusing-unibench_build/tools/seeds/jq"
+flvmeta_SEED="/home/kmg/UNIST/Reusing-unibench_build/tools/seeds/flvmeta"
+pdftotext_SEED="/home/kmg/UNIST/Reusing-unibench_build/tools/seeds/pdftotext"
