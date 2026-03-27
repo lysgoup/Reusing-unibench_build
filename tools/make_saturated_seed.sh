@@ -197,16 +197,36 @@ while true; do
                 # Copy findings/queue to coverage/seed directory before deleting cache
                 queue_src="$cache_path/findings/queue"
                 coverage_outdir="$COVERAGEDIR/$key_fuzzer/$key_target/$key_cachecid"
-                seed_dest="$coverage_outdir/seed/$key_cachecid"
+                seed_dest="$coverage_outdir/seed"
 
                 if [ -d "$queue_src" ]; then
                     echo_time "Copying queue directory to: $seed_dest"
                     mkdir -p "$seed_dest"
-                    cp -r "$queue_src"/* "$seed_dest/" 2>/dev/null || true
+                    cp -r "$queue_src"/. "$seed_dest/" 2>/dev/null || true
                 fi
 
                 echo_time "Removing cache directory: $cache_path"
-                rm -rf "$cache_path"
+
+                # Retry loop for removal (Fuzzer may still be accessing files)
+                max_retries=10
+                retry_count=0
+                while [ $retry_count -lt $max_retries ]; do
+                    if rm -rf "$cache_path" 2>/dev/null; then
+                        echo_time "Cache directory removed successfully"
+                        break
+                    else
+                        retry_count=$((retry_count + 1))
+                        if [ $retry_count -lt $max_retries ]; then
+                            echo_time "Failed to remove cache directory (attempt $retry_count/$max_retries), retrying in 3 seconds..."
+                            sleep 3
+                        fi
+                    fi
+                done
+
+                if [ $retry_count -eq $max_retries ]; then
+                    echo_time "[WARNING] Failed to remove cache directory after $max_retries attempts"
+                fi
+
                 unset 'COVERAGE_CONTAINERS[$key]'
             fi
         fi
