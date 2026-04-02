@@ -116,12 +116,17 @@ fi
 if [ -n "$TIMEOUT" ]; then
     # Run with timeout
     timeout $foreground_flag --signal=INT $TIMEOUT "$FUZZER_RUN_SCRIPT" | \
-        multilog n2 s$LOGSIZE "$SHARED/log"
+        multilog n2 s$LOGSIZE "$SHARED/log" &
 else
     # Run without timeout (until user stops)
     "$FUZZER_RUN_SCRIPT" | \
-        multilog n2 s$LOGSIZE "$SHARED/log"
+        multilog n2 s$LOGSIZE "$SHARED/log" &
 fi
+
+# Trap SIGTERM/SIGINT: ignore in this shell, then broadcast INT to entire
+# process group so the fuzzer receives it and can shut down gracefully.
+trap 'trap "" INT TERM; kill -INT -$$ 2>/dev/null; wait' SIGTERM SIGINT
+wait
 
 if [ -f "$SHARED/log/current" ]; then
     cat "$SHARED/log/current"
