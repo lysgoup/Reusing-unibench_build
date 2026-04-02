@@ -19,11 +19,11 @@ def load_parent_map(filepath):
     """Returns:
       all_ids     : sorted list of all input IDs
       child_count : dict[input_id] -> number of children
-      seeds       : number of inputs whose parent is 'none'
+      seed_ids    : sorted list of input IDs whose parent is 'none'
     """
     all_ids = []
     child_count = Counter()
-    seeds = 0
+    seed_ids = []
 
     with open(filepath) as f:
         for line in f:
@@ -33,12 +33,13 @@ def load_parent_map(filepath):
             child_id, parent_id = parts
             all_ids.append(int(child_id))
             if parent_id == "none":
-                seeds += 1
+                seed_ids.append(int(child_id))
             else:
                 child_count[int(parent_id)] += 1
 
     all_ids.sort()
-    return all_ids, child_count, seeds
+    seed_ids.sort()
+    return all_ids, child_count, seed_ids
 
 
 def main():
@@ -49,8 +50,9 @@ def main():
                         help="Output PNG path (default: parent_distribution.png in same dir)")
     args = parser.parse_args()
 
-    all_ids, child_count, seeds = load_parent_map(args.input)
+    all_ids, child_count, seed_ids = load_parent_map(args.input)
     total = len(all_ids)
+    seeds = len(seed_ids)
     generated = total - seeds
 
     # y값: 각 입력 ID의 자식 수 (parent로 지정된 횟수, 없으면 0)
@@ -76,17 +78,20 @@ def main():
         sizes = sizes / sizes.max() * max_size + 4
         ax_bar.scatter(pos_ids, pos_vals, s=sizes, color="steelblue",
                        linewidths=0, label="has children", zorder=2)
-        mean_v = np.mean(y_vals)
-        ax_bar.axhline(mean_v, color="tomato", linestyle="--", linewidth=1,
-                       label=f"mean={mean_v:.1f}")
 
-    ax_bar.legend(fontsize=8)
+    if seed_ids:
+        last_seed_id = seed_ids[-1]
+        ax_bar.axvline(last_seed_id, color="tomato", linestyle="--", linewidth=1,
+                       label=f"last no-parent ID={last_seed_id}", zorder=3)
+
+    ax_bar.legend().set_visible(False)
     ax_bar.set_title(
         f"total={total}  seeds={seeds}  generated={generated}  unique parents={len(child_count)}",
         fontsize=9)
     ax_bar.set_xlabel("Input ID", fontsize=9)
     ax_bar.set_ylabel("Number of children", fontsize=9)
     ax_bar.set_xlim(all_ids[0] - 0.5, all_ids[-1] + 0.5)
+    ax_bar.set_ylim(bottom=0)
 
     # ── Top-20 parents ────────────────────────────────────────────────────
     top20 = child_count.most_common(20)
