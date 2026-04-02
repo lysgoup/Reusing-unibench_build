@@ -16,6 +16,7 @@
 
 cleanup() {
     if [ ! -t 1 ]; then
+        docker stop $container_id &> /dev/null
         docker rm -f $container_id &> /dev/null
     fi
     exit 0
