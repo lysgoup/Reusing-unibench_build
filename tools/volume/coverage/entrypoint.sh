@@ -113,6 +113,18 @@ fi
 COVERAGE_START_TIME=$(date +%s)
 COVERAGE_LOG="/coverage_out/coverage.log"
 
+# Wait for dryrun to finish before starting measurement loop
+echo "[INFO] Waiting for dryrun_finish signal..."
+while true; do
+    if [ -f "$INPUT_DIR/dryrun_finish" ]; then
+        echo "[INFO] dryrun_finish file detected, removing it..."
+        rm -f "$INPUT_DIR/dryrun_finish"
+        echo "[INFO] Starting main coverage measurement loop..."
+        break
+    fi
+    sleep 3
+done
+
 # Run coverage measurement every 30 minutes
 while true; do
     # Calculate elapsed time in minutes
@@ -131,16 +143,20 @@ while true; do
     # Process all inputs in queue directory
     if [ -d "$INPUT_DIR" ]; then
         INPUT_COUNT=0
+        tmp_input=$(mktemp)
         for input_file in "$INPUT_DIR"/*; do
             [ -f "$input_file" ] || continue
 
             INPUT_COUNT=$((INPUT_COUNT + 1))
 
-            # Build command arguments, replacing @@ with input file path
+            # Copy input to temp file to prevent coverage binary from modifying originals
+            cp "$input_file" "$tmp_input"
+
+            # Build command arguments, replacing @@ with temp file path
             cmd_args=()
             for arg in "${target_args[@]}"; do
                 if [ "$arg" = "@@" ]; then
-                    cmd_args+=("$input_file")
+                    cmd_args+=("$tmp_input")
                 else
                     cmd_args+=("$arg")
                 fi
@@ -150,12 +166,13 @@ while true; do
             # Suppress errors as some inputs may cause crashes
             if [ -n "$target_stdin_from_file" ]; then
                 # Use stdin redirection
-                timeout 5 "$COVERAGE_BIN" "${cmd_args[@]}" < "$input_file" >/dev/null 2>&1 || true
+                timeout 1 "$COVERAGE_BIN" "${cmd_args[@]}" < "$tmp_input" >/dev/null 2>&1 || true
             else
                 # Use command line arguments
-                timeout 5 "$COVERAGE_BIN" "${cmd_args[@]}" >/dev/null 2>&1 || true
+                timeout 1 "$COVERAGE_BIN" "${cmd_args[@]}" >/dev/null 2>&1 || true
             fi
         done
+        rm -f "$tmp_input"
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] Processed $INPUT_COUNT inputs"
     else
         echo "[ERROR] Input directory not found: $INPUT_DIR"

@@ -139,7 +139,8 @@ while true; do
     elapsed=$((current_time - COVERAGE_START_TIME))
     elapsed_minutes=$((elapsed / 60))
 
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running coverage measurement..."
+    iteration_count=$((iteration_count + 1))
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running coverage measurement (iteration: $iteration_count)..."
 
     # Check if coverage output directory is still accessible
     if [ ! -w /coverage_out ]; then
@@ -150,16 +151,20 @@ while true; do
     # Process all inputs in queue directory
     if [ -d "$INPUT_DIR" ]; then
         INPUT_COUNT=0
+        tmp_input=$(mktemp)
         for input_file in "$INPUT_DIR"/*; do
             [ -f "$input_file" ] || continue
 
             INPUT_COUNT=$((INPUT_COUNT + 1))
 
-            # Build command arguments, replacing @@ with input file path
+            # Copy input to temp file to prevent coverage binary from modifying originals
+            cp "$input_file" "$tmp_input"
+
+            # Build command arguments, replacing @@ with temp file path
             cmd_args=()
             for arg in "${target_args[@]}"; do
                 if [ "$arg" = "@@" ]; then
-                    cmd_args+=("$input_file")
+                    cmd_args+=("$tmp_input")
                 else
                     cmd_args+=("$arg")
                 fi
@@ -169,12 +174,13 @@ while true; do
             # Suppress errors as some inputs may cause crashes
             if [ -n "$target_stdin_from_file" ]; then
                 # Use stdin redirection
-                timeout 5 "$COVERAGE_BIN" "${cmd_args[@]}" < "$input_file" >/dev/null 2>&1 || true
+                timeout 1 "$COVERAGE_BIN" "${cmd_args[@]}" < "$tmp_input" >/dev/null 2>&1 || true
             else
                 # Use command line arguments
-                timeout 5 "$COVERAGE_BIN" "${cmd_args[@]}" >/dev/null 2>&1 || true
+                timeout 1 "$COVERAGE_BIN" "${cmd_args[@]}" >/dev/null 2>&1 || true
             fi
         done
+        rm -f "$tmp_input"
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] Processed $INPUT_COUNT inputs"
     else
         echo "[ERROR] Input directory not found: $INPUT_DIR"
@@ -199,8 +205,6 @@ while true; do
 
                     # Check if coverage changed
                     if [ -n "$new_coverage" ]; then
-                        iteration_count=$((iteration_count + 1))
-
                         if [ "$recent_coverage" = "$new_coverage" ]; then
                             if [ $iteration_count -gt $min_iterations ]; then
                                 saturation_count=$((saturation_count + 1))
