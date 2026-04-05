@@ -194,37 +194,16 @@ while true; do
             if ! docker ps -q --filter "id=$container_id" | grep -q .; then
                 echo_time "Corpus saturated for campaign: $key"
 
-                # Copy findings/queue to coverage/seed directory before deleting cache
-                queue_src="$cache_path/findings/queue"
-                coverage_outdir="$COVERAGEDIR/$key_fuzzer/$key_target/$key_cachecid"
-                seed_dest="$coverage_outdir/seed"
+                # Find fuzzer container that has cache_path mounted as /unibench_shared
+                fuzzer_container=$(docker ps -q | xargs -I{} docker inspect {} \
+                    --format '{{.Id}} {{range .Mounts}}{{.Source}}:{{.Destination}} {{end}}' \
+                    2>/dev/null | grep "$cache_path:/unibench_shared" | awk '{print $1}')
 
-                if [ -d "$queue_src" ]; then
-                    echo_time "Copying queue directory to: $seed_dest"
-                    mkdir -p "$seed_dest"
-                    cp -r "$queue_src"/. "$seed_dest/" 2>/dev/null || true
-                fi
-
-                echo_time "Removing cache directory: $cache_path"
-
-                # Retry loop for removal (Fuzzer may still be accessing files)
-                max_retries=10
-                retry_count=0
-                while [ $retry_count -lt $max_retries ]; do
-                    if rm -rf "$cache_path" 2>/dev/null; then
-                        echo_time "Cache directory removed successfully"
-                        break
-                    else
-                        retry_count=$((retry_count + 1))
-                        if [ $retry_count -lt $max_retries ]; then
-                            echo_time "Failed to remove cache directory (attempt $retry_count/$max_retries), retrying in 3 seconds..."
-                            sleep 3
-                        fi
-                    fi
-                done
-
-                if [ $retry_count -eq $max_retries ]; then
-                    echo_time "[WARNING] Failed to remove cache directory after $max_retries attempts"
+                if [ -n "$fuzzer_container" ]; then
+                    echo_time "Sending SIGINT to fuzzer container: ${fuzzer_container:0:12}"
+                    docker kill --signal=INT "$fuzzer_container" 2>/dev/null || true
+                else
+                    echo_time "Fuzzer container not found for $key"
                 fi
 
                 unset 'COVERAGE_CONTAINERS[$key]'
