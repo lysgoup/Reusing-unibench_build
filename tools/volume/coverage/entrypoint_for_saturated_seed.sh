@@ -116,8 +116,8 @@ COVERAGE_LOG="/coverage_out/coverage.log"
 # Initialize coverage saturation tracking
 recent_coverage=0
 saturation_count=0
-saturation_window=48
-min_iterations=192
+saturation_window=1
+min_iterations=2
 iteration_count=0
 
 # Wait for dryrun to finish before starting measurement loop
@@ -241,5 +241,5 @@ while true; do
     fi
 
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Waiting 30 minutes until next measurement..."
-    sleep 1800  # 30 minutes
+    sleep 180  # 30 minutes
 done
