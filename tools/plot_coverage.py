@@ -209,16 +209,16 @@ def collect_and_save_branch_data(workdir, coverage_dir, data_dir):
     return dict(data_summary), files_created
 
 
-def plot_branch_graphs(graph_dir, data_dir):
+def plot_branch_graphs(graph_dir, data_dir, interval):
     """
     Generate branch hit count graphs from data files.
 
     File format:
-    campaign_num branch_count_t0 branch_count_t30 branch_count_t60 ...
+    campaign_num branch_count_t0 branch_count_t1 branch_count_t2 ...
     ...
-    avg avg_t0 avg_t30 avg_t60 ...
+    avg avg_t0 avg_t1 avg_t2 ...
 
-    Each column represents 30 minutes (0, 30, 60, 90, ...).
+    Each column represents `interval` minutes.
 
     Args:
         graph_dir: Path to graph directory (output location)
@@ -292,7 +292,7 @@ def plot_branch_graphs(graph_dir, data_dir):
             num_points = len(next(iter(campaign_data.values())))
 
         # Generate time points (in minutes)
-        time_points = [i * 30 for i in range(num_points)]
+        time_points = [i * interval for i in range(num_points)]
 
         # Create figure with larger height
         fig, ax = plt.subplots(figsize=(12, 8))
@@ -349,7 +349,7 @@ def plot_branch_graphs(graph_dir, data_dir):
         print(f"✓ Created: {output_filename}")
 
 
-def plot_comparison_graphs(graph_dir, data_dir):
+def plot_comparison_graphs(graph_dir, data_dir, interval):
     """
     Generate comparison graphs for targets with multiple fuzzers.
     Shows avg lines with min/max ranges from different fuzzers for the same target.
@@ -417,7 +417,7 @@ def plot_comparison_graphs(graph_dir, data_dir):
 
         # Generate time points (in minutes)
         num_points = len(avg_data)
-        time_points = [i * 30 for i in range(num_points)]
+        time_points = [i * interval for i in range(num_points)]
 
         # Calculate min and max values for each time point
         max_data = []
@@ -516,9 +516,12 @@ def plot_comparison_graphs(graph_dir, data_dir):
 def main():
     parser = argparse.ArgumentParser(description='Generate branch coverage visualization graphs')
     parser.add_argument('workdir', help='Result directory path (_result directory)')
+    parser.add_argument('--interval', type=int, required=True,
+                        help='Measurement interval in minutes (e.g. 10)')
 
     args = parser.parse_args()
     workdir = Path(args.workdir).resolve()
+    interval = args.interval
 
     if not check_coverage_directory(workdir):
         sys.exit(1)
@@ -538,10 +541,10 @@ def main():
                 print(f"    - {fuzzer}: {count} campaigns")
 
     print(f"\nGenerating graphs...")
-    plot_branch_graphs(graph_dir, data_dir)
+    plot_branch_graphs(graph_dir, data_dir, interval)
 
     print(f"\nGenerating comparison graphs...")
-    plot_comparison_graphs(graph_dir, data_dir)
+    plot_comparison_graphs(graph_dir, data_dir, interval)
     print("\n✓ Graph generation complete!")
 
 

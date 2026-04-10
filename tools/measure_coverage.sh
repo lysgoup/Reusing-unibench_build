@@ -9,12 +9,14 @@
 ##
 
 if [ -z "$1" ]; then
-    echo "Usage: $0 WORKDIR"
+    echo "Usage: $0 WORKDIR [MAX_ITERATIONS]"
     echo "WORKDIR: path to work directory (required)"
+    echo "MAX_ITERATIONS: number of coverage measurement iterations after dryrun (optional)"
     exit 1
 fi
 
 WORKDIR="$1"
+MAX_ITERATIONS="${2:-}"
 
 UNIBENCH=${UNIBENCH:-"$(cd "$(dirname "${BASH_SOURCE[0]}")/../" >/dev/null 2>&1 && pwd)"}
 export UNIBENCH
@@ -62,6 +64,7 @@ fi
 
 # Track running coverage containers
 declare -A COVERAGE_CONTAINERS
+declare -A REPORTED_DONE
 
 cleanup()
 {
@@ -151,6 +154,7 @@ start_coverage()
             --volume="$VOLUME_PATH:/volume" \
             --volume="$coverage_outdir:/coverage_out" \
             --env=TARGET="$TARGET" \
+            ${MAX_ITERATIONS:+--env=MAX_ITERATIONS="$MAX_ITERATIONS"} \
             --entrypoint=/volume/coverage/entrypoint.sh \
             "unifuzz/unibench:coverage"
     )
@@ -232,6 +236,26 @@ while true; do
                     clean_up_empty_dir "$cache_dir"
                 else
                     start_coverage "$FUZZER" "$TARGET" "$CACHECID"
+
+                    done_file="$COVERAGEDIR/$FUZZER/$TARGET/$CACHECID/measurement_done"
+                    if [ -f "$done_file" ] && [ -z "${REPORTED_DONE["$FUZZER::$TARGET::$CACHECID"]+x}" ]; then
+                        echo_time "Measurement completed (max iterations): $FUZZER::$TARGET::$CACHECID"
+
+                        # Find fuzzer container that has cache_path mounted as /unibench_shared
+                        cache_path="$CACHEDIR/$FUZZER/$TARGET/$CACHECID"
+                        fuzzer_container=$(docker ps -q | xargs -I{} docker inspect {} \
+                            --format '{{.Id}} {{range .Mounts}}{{.Source}}:{{.Destination}} {{end}}' \
+                            2>/dev/null | grep "$cache_path:/unibench_shared" | awk '{print $1}')
+
+                        if [ -n "$fuzzer_container" ]; then
+                            echo_time "Sending SIGINT to fuzzer container: ${fuzzer_container:0:12}"
+                            docker kill --signal=INT "$fuzzer_container" 2>/dev/null || true
+                        else
+                            echo_time "Fuzzer container not found for $FUZZER::$TARGET::$CACHECID"
+                        fi
+
+                        REPORTED_DONE["$FUZZER::$TARGET::$CACHECID"]=1
+                    fi
                 fi
             done
         done

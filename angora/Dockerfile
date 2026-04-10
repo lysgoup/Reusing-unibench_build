@@ -1,7 +1,7 @@
 FROM unifuzz/unibench:angora_step2
 RUN apt-get update && apt-get install -y flex bison
 
-RUN cd /unibench/binutils-2.28 && ./configure --disable-shared LEXLIB= &&\
+RUN cd /unibench/binutils-2.28 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./configure --disable-shared LEXLIB= &&\
     make -j LEXLIB= &&\
     cp binutils/objdump /d/p/angora/fast/ &&\
     make clean && USE_TRACK=1 ASAN_OPTIONS="detect_leaks=0" make -j LEXLIB= &&\
@@ -10,7 +10,7 @@ RUN cd /unibench/binutils-2.28 && ./configure --disable-shared LEXLIB= &&\
 
 RUN cd /unibench/libpcap-1.8.1 && ./configure --disable-shared &&\
     make -j &&\
-    cd /unibench/tcpdump-4.8.1 && ./configure &&\
+    cd /unibench/tcpdump-4.8.1 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./configure &&\
     make -j &&\
     cp tcpdump /d/p/angora/fast/ &&\
     cd /unibench/libpcap-1.8.1 &&\
@@ -25,7 +25,7 @@ RUN wget --quiet https://gitlab.com/unifuzz/unibench_build/raw/master/ffmpeg/ang
     tar xf angora.tar.gz -C / &&\
     rm angora.tar.gz
 
-RUN cd /unibench/jasper-2.0.12 && cmake -DJAS_ENABLE_SHARED=OFF -DALLOW_IN_SOURCE_BUILD=ON . &&\
+RUN cd /unibench/jasper-2.0.12 && export ANGORA_PASS_LOG_DIR=$(pwd) && cmake -DJAS_ENABLE_SHARED=OFF -DALLOW_IN_SOURCE_BUILD=ON . &&\
     make -j &&\
     cp src/appl/imginfo /d/p/angora/fast/ &&\
     make clean && USE_TRACK=1 make -j &&\
@@ -43,5 +43,7 @@ RUN cd /unibench/libpng && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
 
 # Install daemontools for multilog
 RUN apt-get update && apt-get install -y daemontools && rm -rf /var/lib/apt/lists/*
+
+RUN chmod -R a+rX /unibench
 
 RUN ls -alh /d/p/angora/*

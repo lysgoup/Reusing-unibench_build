@@ -1,0 +1,25 @@
+# This file contains the configuration for the run.sh script. It follows the
+# Bash syntax and is sourced by the script to access the variables. Variables
+# are mandatory unless marked with [brackets].
+
+###
+## Configuration parameters
+###
+
+# WORKDIR: path to directory where shared volumes will be created
+# WORKDIR=../_12h_saturation_exp_dryrun
+WORKDIR=../_saturation_test
+
+# REPEAT: number of campaigns to run per program (per fuzzer)
+REPEAT=1
+
+# [WORKER_POOL]: a space-separated list of logical cores to allocate
+WORKER_POOL="$(seq 189 191)"
+
+# FUZZERS: an array of fuzzer names (from magma/fuzzers/*) to evaluate
+FUZZERS=(angora)
+
+# [fuzzer_TARGETS]: an array of target names (from magma/targets/*) to fuzz with
+angora_TARGETS=(cflow infotocap jq)
+
+# [target_SEED]
