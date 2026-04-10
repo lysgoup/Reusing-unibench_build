@@ -243,6 +243,7 @@ for FUZZER in "${BUILT_FUZZER[@]}"; do
         export TARGET
         export ARGS="$(get_var_or_default "$FUZZER" "$TARGET" 'ARGS')"
         export SEED="$(get_var_or_default "$TARGET" 'SEED')"
+        export QUEUE_FILE="$(get_var_or_default "$TARGET" 'QUEUE_FILE')"
         echo_time "Starting campaigns for $TARGET $ARGS"
         for ((i=0; i<REPEAT; i++)); do
             export NUMWORKERS="$(get_var_or_default "$FUZZER" 'CAMPAIGN_WORKERS')"

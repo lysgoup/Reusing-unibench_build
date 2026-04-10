@@ -99,11 +99,17 @@ target_args=( "${!target_args_var}" )
 target_source_var="${TARGET_NORMALIZED}_source_dir"
 target_source_dir="${!target_source_var}"
 
+# Measurement interval in seconds (modify here to change interval)
+MEASUREMENT_INTERVAL=600
+
 echo "[INFO] Coverage measurement started for: $TARGET"
 echo "[INFO] Coverage binary: $COVERAGE_BIN"
 echo "[INFO] Input directory: $INPUT_DIR"
 echo "[INFO] Output: /coverage_out"
-echo "[INFO] Measurement interval: 30 minutes"
+echo "[INFO] Measurement interval: $((MEASUREMENT_INTERVAL / 60)) minutes ($MEASUREMENT_INTERVAL seconds)"
+if [ -n "$MAX_ITERATIONS" ]; then
+    echo "[INFO] Max iterations: $MAX_ITERATIONS (dryrun wait excluded)"
+fi
 echo "[INFO] Target args: ${target_args[*]}"
 if [ -n "$target_stdin_from_file" ]; then
     echo "[INFO] Input method: stdin from file"
@@ -113,7 +119,7 @@ fi
 COVERAGE_START_TIME=$(date +%s)
 COVERAGE_LOG="/coverage_out/coverage.log"
 
-# Wait for dryrun to finish before starting measurement loop
+Wait for dryrun to finish before starting measurement loop
 echo "[INFO] Waiting for dryrun_finish signal..."
 while true; do
     if [ -f "$INPUT_DIR/dryrun_finish" ]; then
@@ -126,7 +132,9 @@ while true; do
 done
 
 # Run coverage measurement every 30 minutes
+ITERATION=0
 while true; do
+    ITERATION=$((ITERATION + 1))
     # Calculate elapsed time in minutes
     current_time=$(date +%s)
     elapsed=$((current_time - COVERAGE_START_TIME))
@@ -197,6 +205,13 @@ while true; do
         fi
     fi
 
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Waiting 30 minutes until next measurement..."
-    sleep 1800  # 30 minutes
+    # Check iteration limit after measurement
+    if [ -n "$MAX_ITERATIONS" ] && [ "$ITERATION" -ge "$MAX_ITERATIONS" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Reached max iterations ($MAX_ITERATIONS). Exiting."
+        echo "$(date '+%Y-%m-%d %H:%M:%S')" > /coverage_out/measurement_done
+        exit 0
+    fi
+
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Waiting $((MEASUREMENT_INTERVAL / 60)) minutes until next measurement..."
+    sleep "$MEASUREMENT_INTERVAL"
 done

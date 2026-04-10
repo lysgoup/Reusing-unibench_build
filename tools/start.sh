@@ -59,13 +59,21 @@ if [ ! -z "$SEED" ]; then
     flag_seed_env="--env=SEED=/customized_seed"
 fi
 
+if [ ! -z "$QUEUE_FILE" ]; then
+    QUEUE_FILE="$(realpath "$QUEUE_FILE")"
+    flag_queue_volume="--volume=$QUEUE_FILE:/restore/cond_queue.csv:ro"
+    flag_queue_env="--env=QUEUE_FILE=/restore/cond_queue.csv"
+fi
+
 VOLUME_PATH="$(realpath "$UNIBENCH/tools/volume")"
 flag_volume_extra="--volume=$VOLUME_PATH:/volume"
 
 # Get host user UID/GID to preserve file permissions
-USER_ID=$(id -u)
-GROUP_ID=$(id -g)
-flag_user="-u $USER_ID:$GROUP_ID"
+if [ -z "$ROOT_MODE" ]; then
+    USER_ID=$(id -u)
+    GROUP_ID=$(id -g)
+    flag_user="-u $USER_ID:$GROUP_ID"
+fi
 
 # Container name with timestamp (fuzzer-target-timestamp format)
 container_name="${FUZZER}-${TARGET}-$(date +%s%N)"
@@ -73,21 +81,21 @@ flag_name="--name=$container_name"
 
 if [ -t 1 ]; then
     echo_time "Running in interactive mode (TTY attached)"
-    docker run -it $flag_volume $flag_volume_extra $flag_seed_volume \
+    docker run -it $flag_volume $flag_volume_extra $flag_seed_volume $flag_queue_volume \
         --cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
         --env=FUZZER="$FUZZER" --env=TARGET="$TARGET" \
         --env=FUZZARGS="$FUZZARGS" \
         --env=TIMEOUT="$TIMEOUT" \
-        $flag_seed_env \
+        $flag_seed_env $flag_queue_env \
         $flag_aff $flag_user $flag_name $flag_ep "$IMG_NAME"
 else
     echo_time "Running in non-interactive mode (no TTY)"
     container_id=$(
-    docker run -dt $flag_volume $flag_volume_extra $flag_seed_volume \
+    docker run -dt $flag_volume $flag_volume_extra $flag_seed_volume $flag_queue_volume \
         --cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
         --env=FUZZER="$FUZZER" --env=TARGET="$TARGET" \
         --env=FUZZARGS="$FUZZARGS" --env=TIMEOUT="$TIMEOUT" \
-        $flag_seed_env \
+        $flag_seed_env $flag_queue_env \
         --network=none \
         $flag_aff $flag_user $flag_name $flag_ep "$IMG_NAME"
     )

@@ -41,4 +41,6 @@ RUN cd /unibench/libpng && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     cp angora-out/libpng_angora.fast /d/p/angora/fast/libpng_read_fuzzer &&\
     cp angora-out/libpng_angora.taint /d/p/angora/taint/libpng_read_fuzzer
 
+RUN chmod -R a+rX /unibench
+
 RUN ls -alh /d/p/angora/*
