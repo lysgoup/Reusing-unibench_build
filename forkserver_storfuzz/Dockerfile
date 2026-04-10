@@ -148,6 +148,32 @@ RUN apt-get install -y tcl-dev && \
     cd $TARGET_DIR/SQLite-3.8.9 && ./configure CC=$LIBAFL_CC --disable-shared --disable-amalgamation && \
     make CC=$LIBAFL_CC -j && \
     cp sqlite3 /root/projects/targets/
+
+# Copy local libpng source (from ../target/libpng)
+COPY target/libpng /unibench/libpng
+
+# Build libpng_read_fuzzer with coverage instrumentation
+RUN cd /unibench/libpng && \
+    chmod +x build_for_coverage.sh && \
+    ./build_for_libafl.sh 
+
+# flvmeta-1.2.1 compile
+RUN cd $TARGET_DIR/flvmeta-1.2.1 && \
+    cmake -DCMAKE_C_COMPILER=$LIBAFL_CC \
+          -DCMAKE_CXX_COMPILER=$LIBAFL_CXX \
+          . && \
+    make CC=$LIBAFL_CC -j &&\
+    cp src/flvmeta /root/projects/targets/
+
+# swftools-0.9.2 / wav2swf
+RUN cd $TARGET_DIR/swftools-0.9.2/ && \
+    export ANGORA_PASS_LOG_DIR=$(pwd) && \
+    ./configure CC=$LIBAFL_CC CXX=$LIBAFL_CXX && \
+    make -C lib librfxswf.a libbase.a && \
+    make -C src wav2swf && \
+    cp src/wav2swf /root/projects/targets/ && \
+    make clean
+
 # ----- Target compile end ------
 
 # Allow non-root users (container runs as host uid) to access /root/

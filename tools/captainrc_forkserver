@@ -2,18 +2,20 @@
 # Usage: ./run.sh captainrc_forkserver
 
 WORKDIR=../_result
-REPEAT=2
-WORKER_POOL="0 1 2 3 4 5 6 7 8 9 10 11"
-TIMEOUT=24h
-# exiv2    imginfo  jq mp3gain  pdftotext  ||   libpng_read_fuzzer  flvmeta    wav2swf 
+REPEAT=1
+WORKER_POOL="90 91 92 93 94 95 96 97"
+# TIMEOUT=5m
+# exiv2    imginfo  jq mp3gain  pdftotext  wav2swf flvmeta || libpng_read_fuzzer
 FUZZERS=(forkserver_libafl)
 
 # forkserver_storfuzz_TARGETS=(jq exiv2 sqlite3)
-forkserver_libafl_TARGETS=(exiv2  imginfo  jq mp3gain  pdftotext)
+forkserver_libafl_TARGETS=(exiv2 imginfo jq mp3gain pdftotext flvmeta wav2swf libpng_read_fuzzer)
 
-exiv2_SEED="/home/kmg/UNIST/Reusing-unibench_build/tools/seeds/exiv2"
-imginfo_SEED="/home/kmg/UNIST/Reusing-unibench_build/tools/seeds/imginfo"
-mp3gain_SEED="/home/kmg/UNIST/Reusing-unibench_build/tools/seeds/mp3gain"
-jq_SEED="/home/kmg/UNIST/Reusing-unibench_build/tools/seeds/jq"
-flvmeta_SEED="/home/kmg/UNIST/Reusing-unibench_build/tools/seeds/flvmeta"
-pdftotext_SEED="/home/kmg/UNIST/Reusing-unibench_build/tools/seeds/pdftotext"
+exiv2_SEED="/home/myeonggyu/Reusing-unibench_build/tools/volume/seeds/general_evaluation/jpg"
+imginfo_SEED="/home/myeonggyu/Reusing-unibench_build/tools/volume/seeds/general_evaluation/imginfo"
+mp3gain_SEED="/home/myeonggyu/Reusing-unibench_build/tools/volume/seeds/general_evaluation/mp3"
+jq_SEED="/home/myeonggyu/Reusing-unibench_build/tools/volume/seeds/general_evaluation/json"
+flvmeta_SEED="/home/myeonggyu/Reusing-unibench_build/tools/volume/seeds/general_evaluation/flv"
+pdftotext_SEED="/home/myeonggyu/Reusing-unibench_build/tools/volume/seeds/general_evaluation/pdf"
+libpng_read_fuzzer_SEED="/home/myeonggyu/Reusing-unibench_build/tools/volume/seeds/general_evaluation/imginfo"
+wav2swf_SEED="/home/myeonggyu/Reusing-unibench_build/tools/volume/seeds/general_evaluation/wav"
