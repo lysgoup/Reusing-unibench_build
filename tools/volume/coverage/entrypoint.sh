@@ -119,13 +119,11 @@ fi
 COVERAGE_START_TIME=$(date +%s)
 COVERAGE_LOG="/coverage_out/coverage.log"
 
-Wait for dryrun to finish before starting measurement loop
+# Wait for dryrun to finish before starting measurement loop
 echo "[INFO] Waiting for dryrun_finish signal..."
 while true; do
-    if [ -f "$INPUT_DIR/dryrun_finish" ]; then
-        echo "[INFO] dryrun_finish file detected, removing it..."
-        rm -f "$INPUT_DIR/dryrun_finish"
-        echo "[INFO] Starting main coverage measurement loop..."
+    if [ -f "$INPUT_DIR/signal/dryrun_finish" ]; then
+        echo "[INFO] dryrun_finish file detected in signal dir, starting measurement..."
         break
     fi
     sleep 3
