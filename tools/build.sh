@@ -51,7 +51,8 @@ if [ "$FUZZER" = "angora" ]; then
         docker build -t "yunseo/angora" "$UNIBENCH/../Angora_original"
         docker build -t "unifuzz/unibench:angora_step1" "$UNIBENCH/angora_step1"
         docker build -t "unifuzz/unibench:angora_step2" "$UNIBENCH/angora_step2"
-        docker build -t "$IMG_NAME" -f "$UNIBENCH/angora/Dockerfile" "$UNIBENCH/../Angora_original"
+        docker build -t "${IMG_NAME}-base" -f "$UNIBENCH/angora/Dockerfile" "$UNIBENCH/../Angora_original"
+        docker build -t "$IMG_NAME" -f "$UNIBENCH/angora_fuzzer_only/Dockerfile" "$UNIBENCH/../Angora_original"
         set +x
         echo "$LLVM_HASH" > "$CACHE_DIR/llvm.hash"
         echo "$FUZZER_HASH" > "$CACHE_DIR/fuzzer.hash"
@@ -101,7 +102,7 @@ elif [ "$FUZZER" = "angora-reusing" ]; then
         docker build -t "yunseo/angora-reusing" "$UNIBENCH/../"
         docker build -t "unifuzz/unibench:angora-reusing_step1" "$UNIBENCH/angora-reusing_step1"
         docker build -t "unifuzz/unibench:angora-reusing_step2" "$UNIBENCH/angora-reusing_step2"
-        docker build -t "$IMG_NAME" -f "$UNIBENCH/angora-reusing/Dockerfile" "$UNIBENCH/../"
+        docker build -t "${IMG_NAME}-base" -f "$UNIBENCH/angora-reusing/Dockerfile" "$UNIBENCH/../"
         docker build -t "$IMG_NAME" -f "$UNIBENCH/angora-reusing_fuzzer_only/Dockerfile" "$UNIBENCH/../"
         set +x
         echo "$LLVM_HASH" > "$CACHE_DIR/llvm.hash"
