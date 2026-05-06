@@ -33,7 +33,7 @@ RUN cd /unibench/jasper-2.0.12 && export ANGORA_PASS_LOG_DIR=$(pwd) && cmake -DJ
     make clean
 
 # Copy libpng build script
-COPY target/libpng /unibench/libpng
+# COPY target/libpng /unibench/libpng
 
 # Build libpng for Angora
 # RUN cd /unibench/libpng && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
