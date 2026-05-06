@@ -82,7 +82,7 @@ flag_name="--name=$container_name"
 if [ -t 1 ]; then
     echo_time "Running in interactive mode (TTY attached)"
     docker run -it $flag_volume $flag_volume_extra $flag_seed_volume $flag_queue_volume \
-        --cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
+        --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --ulimit core=0 \
         --env=FUZZER="$FUZZER" --env=TARGET="$TARGET" \
         --env=FUZZARGS="$FUZZARGS" \
         --env=TIMEOUT="$TIMEOUT" \
@@ -92,7 +92,7 @@ else
     echo_time "Running in non-interactive mode (no TTY)"
     container_id=$(
     docker run -dt $flag_volume $flag_volume_extra $flag_seed_volume $flag_queue_volume \
-        --cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
+        --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --ulimit core=0 \
         --env=FUZZER="$FUZZER" --env=TARGET="$TARGET" \
         --env=FUZZARGS="$FUZZARGS" --env=TIMEOUT="$TIMEOUT" \
         $flag_seed_env $flag_queue_env \
