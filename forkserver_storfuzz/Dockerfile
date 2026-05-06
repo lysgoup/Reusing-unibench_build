@@ -51,18 +51,14 @@ RUN apt-get update && apt-get install -y clang-format-${LLVM_VERSION}
 
 WORKDIR /root
 
-# Clone StorFuzz-LibAFL and apply combined patch
-# (StorFuzz pass, .init_array forkserver, shmem, OR-bitmap clear in child)
-RUN git clone https://github.com/rub-softsec/StorFuzz-LibAFL.git
+# Build LibAFL-Stats
+RUN git clone https://github.com/rub-SoftSec/StorFuzz-LibAFL.git /StorFuzz && \
+    cd /StorFuzz && \
+    git checkout dd13ddb23a946aedc197abe0e451eeed012028f5
 
-COPY Reusing-unibench_build/forkserver_storfuzz/storfuzz_storfuzz.patch /root/
-RUN cd /root/StorFuzz-LibAFL && git apply /root/storfuzz_storfuzz.patch
-
-# Update forkserver_libafl_cc/Cargo.toml
-RUN cd /root/StorFuzz-LibAFL/fuzzers/forkserver_libafl_cc && \
-    sed -i 's|libafl = { path = "../../libafl/" }|libafl = { path = "../../libafl/", features = ["track_hit_feedbacks"] }|' Cargo.toml && \
-    sed -i 's|features = \["sancov_pcguard_hitcounts", "libfuzzer", "pointer_maps"\]|features = ["sancov_pcguard_hitcounts", "libfuzzer", "pointer_maps", "sancov_cmplog"]|' Cargo.toml && \
-    sed -i 's|env_logger = "0\.11"|mimalloc = { version = "*", default-features = false }\nstorfuzz_constants = {path = "../storfuzz_constants/"}\nenv_logger = "*"\nlog = "*"|' Cargo.toml
+# 이 부분 추가
+COPY Reusing-unibench_build/forkserver_storfuzz/storfuzz.patch /
+RUN cd /StorFuzz && git apply /storfuzz.patch
 
 # unibench setup
 RUN git clone https://github.com/UNIFUZZ/unibench && \
@@ -75,14 +71,14 @@ RUN git clone https://github.com/UNIFUZZ/unibench && \
     ls -alh
 
 COPY Reusing-unibench_build/tools/seeds /root/projects/seed_corpus
-ENV LIBAFL_CC=/root/StorFuzz-LibAFL/fuzzers/forkserver_libafl_cc/target/release/libafl_cc
-ENV LIBAFL_CXX=/root/StorFuzz-LibAFL/fuzzers/forkserver_libafl_cc/target/release/libafl_cxx
-ENV FUZZER=/root/StorFuzz-LibAFL/fuzzers/forkserver_libafl_cc/target/release/forkserver_libafl_cc
+ENV LIBAFL_CC=/StorFuzz/fuzzers/forkserver_libafl_cc/target/release/libafl_cc
+ENV LIBAFL_CXX=/StorFuzz/fuzzers/forkserver_libafl_cc/target/release/libafl_cxx
+ENV FUZZER=/StorFuzz/fuzzers/forkserver_libafl_cc/target/release/forkserver_libafl_cc
 ENV TARGET_DIR=/root/unibench
 ENV SEED_DIR=/root/projects/seed_corpus
 
 # Build LibAFL toolchain
-WORKDIR /root/StorFuzz-LibAFL/fuzzers/forkserver_libafl_cc
+WORKDIR /StorFuzz/fuzzers/forkserver_libafl_cc
 RUN unset CFLAGS CXXFLAGS && \
     export LIBAFL_EDGES_MAP_SIZE_MAX=4194304 && \
     CFLAGS="" CXXFLAGS="" cargo build --release
@@ -154,9 +150,9 @@ RUN apt-get install -y tcl-dev && \
 # Only chmod the three fuzzer binaries, not the entire target/release tree (too slow)
 RUN chmod o+x /root && \
     chmod o+rx \
-        /root/StorFuzz-LibAFL/fuzzers/forkserver_libafl_cc/target/release/forkserver_libafl_cc \
-        /root/StorFuzz-LibAFL/fuzzers/forkserver_libafl_cc/target/release/libafl_cc \
-        /root/StorFuzz-LibAFL/fuzzers/forkserver_libafl_cc/target/release/libafl_cxx && \
+        /StorFuzz/fuzzers/forkserver_libafl_cc/target/release/forkserver_libafl_cc \
+        /StorFuzz/fuzzers/forkserver_libafl_cc/target/release/libafl_cc \
+        /StorFuzz/fuzzers/forkserver_libafl_cc/target/release/libafl_cxx && \
     chmod -R o+rX /root/projects
 
 # WORKDIR /root/projects

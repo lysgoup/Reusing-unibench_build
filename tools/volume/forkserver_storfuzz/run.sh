@@ -10,7 +10,7 @@
 
 set -e
 
-FUZZER="/root/StorFuzz-LibAFL/fuzzers/forkserver_libafl_cc/target/release/forkserver_libafl_cc"
+FUZZER="/StorFuzz/fuzzers/forkserver_libafl_cc/target/release/forkserver_libafl_cc"
 
 # Map TARGET name → binary path inside container
 case "$TARGET" in
