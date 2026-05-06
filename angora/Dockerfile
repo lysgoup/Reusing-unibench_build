@@ -33,13 +33,13 @@ RUN cd /unibench/jasper-2.0.12 && export ANGORA_PASS_LOG_DIR=$(pwd) && cmake -DJ
     make clean
 
 # Copy libpng build script
-COPY target/libpng /unibench/libpng
+# COPY target/libpng /unibench/libpng
 
 # Build libpng for Angora
-RUN cd /unibench/libpng && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
-    bash build_for_angora.sh &&\
-    cp angora-out/libpng_angora.fast /d/p/angora/fast/libpng_read_fuzzer &&\
-    cp angora-out/libpng_angora.taint /d/p/angora/taint/libpng_read_fuzzer
+# RUN cd /unibench/libpng && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
+#     bash build_for_angora.sh &&\
+#     cp angora-out/libpng_angora.fast /d/p/angora/fast/libpng_read_fuzzer &&\
+#     cp angora-out/libpng_angora.taint /d/p/angora/taint/libpng_read_fuzzer
 
 # Install daemontools for multilog
 RUN apt-get update && apt-get install -y daemontools && rm -rf /var/lib/apt/lists/*
