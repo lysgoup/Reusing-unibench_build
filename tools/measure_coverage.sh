@@ -6,17 +6,21 @@
 #
 # Pre-requirements:
 # + $1: WORKDIR (required)
+# + $2: INTERVAL (required, in seconds)
+# + $3: MAX_ITERATIONS (optional)
 ##
 
-if [ -z "$1" ]; then
-    echo "Usage: $0 WORKDIR [MAX_ITERATIONS]"
+if [ -z "$1" ] || [ -z "$2" ]; then
+    echo "Usage: $0 WORKDIR INTERVAL [MAX_ITERATIONS]"
     echo "WORKDIR: path to work directory (required)"
+    echo "INTERVAL: coverage measurement interval in seconds (required)"
     echo "MAX_ITERATIONS: number of coverage measurement iterations after dryrun (optional)"
     exit 1
 fi
 
 WORKDIR="$1"
-MAX_ITERATIONS="${2:-}"
+INTERVAL="$2"
+MAX_ITERATIONS="${3:-}"
 
 UNIBENCH=${UNIBENCH:-"$(cd "$(dirname "${BASH_SOURCE[0]}")/../" >/dev/null 2>&1 && pwd)"}
 export UNIBENCH
@@ -154,6 +158,7 @@ start_coverage()
             --volume="$VOLUME_PATH:/volume" \
             --volume="$coverage_outdir:/coverage_out" \
             --env=TARGET="$TARGET" \
+            --env=MEASUREMENT_INTERVAL="$INTERVAL" \
             ${MAX_ITERATIONS:+--env=MAX_ITERATIONS="$MAX_ITERATIONS"} \
             --entrypoint=/volume/coverage/entrypoint.sh \
             "unifuzz/unibench:coverage"
