@@ -100,7 +100,7 @@ target_source_var="${TARGET_NORMALIZED}_source_dir"
 target_source_dir="${!target_source_var}"
 
 # Measurement interval in seconds (modify here to change interval)
-MEASUREMENT_INTERVAL=600
+MEASUREMENT_INTERVAL=${MEASUREMENT_INTERVAL:-900}
 
 echo "[INFO] Coverage measurement started for: $TARGET"
 echo "[INFO] Coverage binary: $COVERAGE_BIN"
