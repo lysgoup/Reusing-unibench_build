@@ -21,7 +21,8 @@ case "$TARGET" in
     cflow)     TARGET_BINARY="/root/projects/targets/cflow" ;;
     jq)        TARGET_BINARY="/root/projects/targets/jq" ;;
     pdftotext) TARGET_BINARY="/root/projects/targets/pdftotext" ;;
-    sqlite3)   TARGET_BINARY="/root/projects/targets/sqlite3" ;;
+    sqlite3)            TARGET_BINARY="/root/projects/targets/sqlite3" ;;
+    libpng_read_fuzzer) TARGET_BINARY="/root/projects/targets/libpng_read_fuzzer" ;;
     *)         echo "forkserver_storfuzz: Unknown target: $TARGET"; exit 1 ;;
 esac
 
