@@ -107,11 +107,22 @@ RUN ls -alh /d/p/*
 # Install lcov and genhtml for coverage measurement
 RUN apt-get update && apt-get install -y lcov && rm -rf /var/lib/apt/lists/*
 
-# RUN git clone --depth=1 --branch master https://github.com/pnggroup/libpng.git /unibench/libpng
-
-# COPY Reusing-unibench_build/coverage/build_for_coverage.sh /unibench/libpng/
-# COPY Reusing-unibench_build/coverage/libfuzz-harness-proxy.c /unibench/libpng/
-
-# RUN cd /unibench/libpng && \
-#     chmod +x build_for_coverage.sh && \
-#     ./build_for_coverage.sh
+# libpng (libpng_read_fuzzer)
+COPY Reusing-unibench_build/coverage/libfuzz-harness-proxy.c /tmp/libfuzz-harness-proxy.c
+RUN apt-get install -y autoconf automake libtool && \
+    git clone --depth=1 --branch v1.6.51 https://github.com/pnggroup/libpng.git /tmp/libpng && \
+    cd /tmp/libpng && \
+    autoreconf -fi && \
+    ./configure --disable-shared && \
+    make -j$(nproc) && \
+    g++ -std=c++11 -O2 -fprofile-arcs -ftest-coverage -I/tmp/libpng \
+      -c contrib/oss-fuzz/libpng_read_fuzzer.cc \
+      -o /tmp/fuzzer.o && \
+    gcc -O2 -fprofile-arcs -ftest-coverage \
+      -c /tmp/libfuzz-harness-proxy.c \
+      -o /tmp/proxy.o && \
+    g++ -fprofile-arcs -ftest-coverage \
+      /tmp/fuzzer.o /tmp/proxy.o \
+      .libs/libpng16.a -lz \
+      -o /d/p/cov/libpng_read_fuzzer && \
+    rm -rf /tmp/libpng /tmp/libfuzz-harness-proxy.c /tmp/fuzzer.o /tmp/proxy.o
