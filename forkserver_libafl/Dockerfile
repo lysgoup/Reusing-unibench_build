@@ -51,16 +51,29 @@ RUN apt-get update && apt-get install -y clang-format-${LLVM_VERSION}
 
 WORKDIR /root
 
-# Clone StorFuzz-LibAFL and apply forkserver_libafl baseline patch
-# (edge coverage only: need_libafl_arg(false), .init_array forkserver, OnDiskCorpus)
-# StorFuzz LLVM pass and data shmem are intentionally NOT included.
-RUN git clone https://github.com/rub-softsec/StorFuzz-LibAFL.git
+# Build LibAFL-Stats
+RUN cd / && \
+    git clone https://github.com/aflplusplus/LibAFL.git /libafl-stats && \
+    cd /libafl-stats && \
+    git checkout bb579e624e907b6488f019a6f0bb0634aa0f81da
 
-COPY Reusing-unibench_build/forkserver_libafl/forkserver_libafl_baseline.patch /root/
-RUN cd /root/StorFuzz-LibAFL && git apply /root/forkserver_libafl_baseline.patch
+COPY fuzzbench_stats.patch /
+RUN cd /libafl-stats && git apply /fuzzbench_stats.patch
 
-# Update Cargo.toml (no storfuzz_constants)
-RUN cd /root/StorFuzz-LibAFL/fuzzers/forkserver_libafl_cc && \
+# Patch 2: Forkserver baseline (.init_array, need_libafl_arg(false), OnDiskCorpus, -o flag)
+COPY forkserver_libafl_baseline.patch /
+RUN cd /libafl-stats && git apply /forkserver_libafl_baseline.patch
+
+# Patch 3: Add OnDiskTOMLMonitor to forkserver main.rs (stats.toml output)
+COPY forkserver_toml_monitor.patch /
+RUN cd /libafl-stats && git apply /forkserver_toml_monitor.patch
+
+# Patch 4: Add forkserver_libafl_dryrun.patch
+COPY forkserver_libafl_dryrun.patch /
+RUN cd /libafl-stats && git apply /forkserver_libafl_dryrun.patch
+
+# Patch Cargo.toml: add track_hit_feedbacks, sancov_cmplog, mimalloc
+RUN cd /libafl-stats/fuzzers/forkserver_libafl_cc && \
     sed -i 's|libafl = { path = "../../libafl/" }|libafl = { path = "../../libafl/", features = ["track_hit_feedbacks"] }|' Cargo.toml && \
     sed -i 's|features = \["sancov_pcguard_hitcounts", "libfuzzer", "pointer_maps"\]|features = ["sancov_pcguard_hitcounts", "libfuzzer", "pointer_maps", "sancov_cmplog"]|' Cargo.toml && \
     sed -i 's|env_logger = "0\.11"|mimalloc = { version = "*", default-features = false }\nenv_logger = "*"\nlog = "*"|' Cargo.toml
