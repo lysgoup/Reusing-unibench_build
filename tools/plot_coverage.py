@@ -244,7 +244,7 @@ def plot_branch_graphs(graph_dir, data_dir, interval):
         # Extract target and fuzzer from filename
         # Format: {target}_{fuzzer}_branch_count.txt
         filename = data_file.stem.replace('_branch_count', '')
-        parts = filename.rsplit('_', 1)
+        parts = filename.split('_', 1)
 
         if len(parts) != 2:
             print(f"Warning: Could not parse filename: {data_file.name}")
@@ -377,7 +377,7 @@ def plot_comparison_graphs(graph_dir, data_dir, interval):
         # Extract target and fuzzer from filename
         # Format: {target}_{fuzzer}_branch_count.txt
         filename = data_file.stem.replace('_branch_count', '')
-        parts = filename.rsplit('_', 1)
+        parts = filename.split('_', 1)
 
         if len(parts) != 2:
             continue
