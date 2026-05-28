@@ -151,7 +151,8 @@ start_coverage()
             --volume="$VOLUME_PATH:/volume" \
             --volume="$coverage_outdir:/coverage_out" \
             --env=TARGET="$TARGET" \
-            --entrypoint=/volume/coverage/entrypoint_for_saturated_seed.sh \
+            --env=TZ="Asia/Seoul" \
+            --entrypoint=/volume/coverage/entrypoint_for_saturation.sh \
             "unifuzz/unibench:coverage"
     )
 

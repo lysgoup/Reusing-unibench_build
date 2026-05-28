@@ -7,20 +7,29 @@
 # Pre-requirements:
 # + $1: WORKDIR (required)
 # + $2: INTERVAL (required, in seconds)
-# + $3: MAX_ITERATIONS (optional)
+# + $3: MAX_ITERATIONS (required)
 ##
 
-if [ -z "$1" ] || [ -z "$2" ]; then
-    echo "Usage: $0 WORKDIR INTERVAL [MAX_ITERATIONS]"
-    echo "WORKDIR: path to work directory (required)"
-    echo "INTERVAL: coverage measurement interval in seconds (required)"
-    echo "MAX_ITERATIONS: number of coverage measurement iterations after dryrun (optional)"
+if [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ]; then
+    echo "Usage: $0 WORKDIR INTERVAL MAX_ITERATIONS [SATURATION_WINDOW MIN_ITERATIONS]"
+    echo "WORKDIR:           path to work directory (required)"
+    echo "INTERVAL:          coverage measurement interval in seconds (required)"
+    echo "MAX_ITERATIONS:    number of coverage measurement iterations after dryrun (required)"
+    echo "SATURATION_WINDOW: stop early if branch coverage unchanged for this many iterations (optional)"
+    echo "MIN_ITERATIONS:    minimum iterations before saturation counting starts (required if SATURATION_WINDOW is set)"
+    exit 1
+fi
+
+if [ -n "$4" ] && [ -z "$5" ]; then
+    echo "Error: MIN_ITERATIONS is required when SATURATION_WINDOW is set"
     exit 1
 fi
 
 WORKDIR="$1"
 INTERVAL="$2"
-MAX_ITERATIONS="${3:-}"
+MAX_ITERATIONS="$3"
+SATURATION_WINDOW="${4:-}"
+MIN_ITERATIONS="${5:-}"
 
 UNIBENCH=${UNIBENCH:-"$(cd "$(dirname "${BASH_SOURCE[0]}")/../" >/dev/null 2>&1 && pwd)"}
 export UNIBENCH
@@ -69,6 +78,7 @@ fi
 # Track running coverage containers
 declare -A COVERAGE_CONTAINERS
 declare -A REPORTED_DONE
+declare -A ARCHIVE_PIDS
 
 cleanup()
 {
@@ -77,6 +87,10 @@ cleanup()
         if docker ps -q --filter "id=$container_id" | grep -q .; then
             docker rm -f "$container_id" 2>/dev/null || true
         fi
+    done
+    echo_time "Cleaning up archive processes..."
+    for pid in "${ARCHIVE_PIDS[@]}"; do
+        kill "$pid" 2>/dev/null || true
     done
     exit 0
 }
@@ -117,17 +131,6 @@ start_coverage()
     local CACHECID=$3
     local key="${FUZZER}::${TARGET}::${CACHECID}"
 
-    # Check if already running
-    if [ -n "${COVERAGE_CONTAINERS[$key]}" ]; then
-        local container_id="${COVERAGE_CONTAINERS[$key]}"
-        if docker ps -q --filter "id=$container_id" | grep -q .; then
-            return  # Already running
-        fi
-    fi
-
-    # New campaign detected
-    echo_time "New campaign detected: $key"
-
     # Monitor CACHE directory for real-time results
     local cache_dir="$CACHEDIR/$FUZZER/$TARGET/$CACHECID"
     if [ ! -d "$cache_dir" ]; then
@@ -143,7 +146,7 @@ start_coverage()
         return
     fi
 
-    mkdir -p "$coverage_outdir"
+    mkdir -p "$coverage_outdir/archives"
 
     local VOLUME_PATH="$(realpath "$UNIBENCH/tools/volume")"
     local USER_ID=$(id -u)
@@ -154,12 +157,14 @@ start_coverage()
     local container_id=$(
         docker run -d \
             --name="$container_name" \
-            --volume="$cache_dir:/unibench_shared" \
             --volume="$VOLUME_PATH:/volume" \
             --volume="$coverage_outdir:/coverage_out" \
             --env=TARGET="$TARGET" \
             --env=MEASUREMENT_INTERVAL="$INTERVAL" \
+            --env=TZ="Asia/Seoul" \
             ${MAX_ITERATIONS:+--env=MAX_ITERATIONS="$MAX_ITERATIONS"} \
+            ${SATURATION_WINDOW:+--env=SATURATION_WINDOW="$SATURATION_WINDOW"} \
+            ${MIN_ITERATIONS:+--env=MIN_ITERATIONS="$MIN_ITERATIONS"} \
             --entrypoint=/volume/coverage/entrypoint.sh \
             "unifuzz/unibench:coverage"
     )
@@ -176,6 +181,17 @@ start_coverage()
 
     # Start logging in background
     (docker logs -f "$container_id" 2>/dev/null || true) &> "${LOGDIR}/coverage_${key}.log" &
+
+    # Start archive process in background
+    local archive_dir="$coverage_outdir/archives"
+    "$UNIBENCH/tools/archive_queue.sh" \
+        "$cache_dir" \
+        "$archive_dir" \
+        "$INTERVAL" \
+        ${MAX_ITERATIONS:+"$MAX_ITERATIONS"} \
+        &>> "${LOGDIR}/archive_${key}.log" &
+    ARCHIVE_PIDS[$key]=$!
+    echo_time "Archive process started for $FUZZER::$TARGET::$CACHECID (PID: ${ARCHIVE_PIDS[$key]})"
 }
 
 # Monitor cache directories for real-time coverage measurement
@@ -191,12 +207,25 @@ while true; do
         cache_path="$CACHEDIR/$key_fuzzer/$key_target/$key_cachecid"
         if [ ! -d "$cache_path" ]; then
             container_id="${COVERAGE_CONTAINERS[$key]}"
-            echo_time "$cache_path"
-            echo_time "Campaign no longer exists, cleaning up: $key"
-            if docker ps -q --filter "id=$container_id" | grep -q .; then
-                docker rm -f "$container_id" 2>/dev/null || true
+            archive_done_file="$COVERAGEDIR/$key_fuzzer/$key_target/$key_cachecid/archives/archive_done"
+            if [ -f "$archive_done_file" ]; then
+                # Normal completion: leave coverage container to finish remaining archives
+                if ! docker ps -q --filter "id=$container_id" | grep -q .; then
+                    echo_time "Coverage container finished: $key"
+                    unset 'COVERAGE_CONTAINERS[$key]'
+                fi
+            else
+                # Unexpected termination: force kill coverage container
+                echo_time "Campaign terminated unexpectedly, cleaning up: $key"
+                if docker ps -q --filter "id=$container_id" | grep -q .; then
+                    docker rm -f "$container_id" 2>/dev/null || true
+                fi
+                unset 'COVERAGE_CONTAINERS[$key]'
+                if [ -n "${ARCHIVE_PIDS[$key]}" ]; then
+                    kill "${ARCHIVE_PIDS[$key]}" 2>/dev/null || true
+                    unset 'ARCHIVE_PIDS[$key]'
+                fi
             fi
-            unset 'COVERAGE_CONTAINERS[$key]'
         fi
     done
 
@@ -240,11 +269,16 @@ while true; do
                     # Try to clean up empty directories (3+ min inactive)
                     clean_up_empty_dir "$cache_dir"
                 else
-                    start_coverage "$FUZZER" "$TARGET" "$CACHECID"
+                    key="${FUZZER}::${TARGET}::${CACHECID}"
+                    if ! { [ -n "${COVERAGE_CONTAINERS[$key]}" ] && \
+                           docker ps -q --filter "id=${COVERAGE_CONTAINERS[$key]}" | grep -q .; }; then
+                        echo_time "New campaign detected: $key"
+                        start_coverage "$FUZZER" "$TARGET" "$CACHECID"
+                    fi
 
-                    done_file="$COVERAGEDIR/$FUZZER/$TARGET/$CACHECID/measurement_done"
+                    done_file="$COVERAGEDIR/$FUZZER/$TARGET/$CACHECID/archives/archive_done"
                     if [ -f "$done_file" ] && [ -z "${REPORTED_DONE["$FUZZER::$TARGET::$CACHECID"]+x}" ]; then
-                        echo_time "Measurement completed (max iterations): $FUZZER::$TARGET::$CACHECID"
+                        echo_time "Archiving completed (max iterations): $FUZZER::$TARGET::$CACHECID"
 
                         # Find fuzzer container that has cache_path mounted as /unibench_shared
                         cache_path="$CACHEDIR/$FUZZER/$TARGET/$CACHECID"
@@ -257,6 +291,30 @@ while true; do
                             docker kill --signal=INT "$fuzzer_container" 2>/dev/null || true
                         else
                             echo_time "Fuzzer container not found for $FUZZER::$TARGET::$CACHECID"
+                        fi
+
+                        REPORTED_DONE["$FUZZER::$TARGET::$CACHECID"]=1
+                    fi
+
+                    saturation_file="$COVERAGEDIR/$FUZZER/$TARGET/$CACHECID/saturation_done"
+                    if [ -f "$saturation_file" ] && [ -z "${REPORTED_DONE["$FUZZER::$TARGET::$CACHECID"]+x}" ]; then
+                        echo_time "Saturation detected: $FUZZER::$TARGET::$CACHECID"
+
+                        cache_path="$CACHEDIR/$FUZZER/$TARGET/$CACHECID"
+                        fuzzer_container=$(docker ps -q | xargs -I{} docker inspect {} \
+                            --format '{{.Id}} {{range .Mounts}}{{.Source}}:{{.Destination}} {{end}}' \
+                            2>/dev/null | grep "$cache_path:/unibench_shared" | awk '{print $1}')
+
+                        if [ -n "$fuzzer_container" ]; then
+                            echo_time "Sending SIGINT to fuzzer container: ${fuzzer_container:0:12}"
+                            docker kill --signal=INT "$fuzzer_container" 2>/dev/null || true
+                        else
+                            echo_time "Fuzzer container not found for $FUZZER::$TARGET::$CACHECID"
+                        fi
+
+                        if [ -n "${ARCHIVE_PIDS[$key]}" ]; then
+                            kill "${ARCHIVE_PIDS[$key]}" 2>/dev/null || true
+                            unset 'ARCHIVE_PIDS[$key]'
                         fi
 
                         REPORTED_DONE["$FUZZER::$TARGET::$CACHECID"]=1

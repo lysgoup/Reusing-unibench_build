@@ -23,27 +23,14 @@ if [ "$(id -u)" -eq 0 ] && [ "$MEASURE_USER_ID" != "0" ]; then
     echo "[INFO] Running as root, will switch to user $MEASURE_USER_ID for measurements"
 fi
 
-# Find input directory (handles different fuzzer output structures)
-# Try multiple possible locations
-INPUT_DIR=""
-if [ -d /unibench_shared/findings/queue ]; then
-    INPUT_DIR="/unibench_shared/findings/queue"
-elif [ -d /unibench_shared/findings/default/queue ]; then
-    INPUT_DIR="/unibench_shared/findings/default/queue"
-else
-    echo "[ERROR] Input directory not found in expected locations:"
-    echo "  - /unibench_shared/findings/queue (angora)"
-    echo "  - /unibench_shared/findings/default/queue (aflplusplus)"
+ARCHIVES_DIR="/coverage_out/archives"
+
+if [ ! -d "$ARCHIVES_DIR" ]; then
+    echo "[ERROR] Archives directory not found: $ARCHIVES_DIR"
     exit 1
 fi
 
-echo "[INFO] Using input directory: $INPUT_DIR"
-
-# Check if coverage output directory is empty
-if [ -d /coverage_out ] && [ -n "$(ls -A /coverage_out 2>/dev/null)" ]; then
-    echo "[ERROR] /coverage_out directory is not empty. Please clean it before starting."
-    exit 1
-fi
+echo "[INFO] Using archives directory: $ARCHIVES_DIR"
 
 # Disable core dumps to avoid filling up disk
 ulimit -c 0
@@ -115,101 +102,111 @@ if [ -n "$target_stdin_from_file" ]; then
     echo "[INFO] Input method: stdin from file"
 fi
 
-# Initialize start time for elapsed time calculation
-COVERAGE_START_TIME=$(date +%s)
 COVERAGE_LOG="/coverage_out/coverage.log"
 
-# Wait for dryrun to finish before starting measurement loop
-echo "[INFO] Waiting for dryrun_finish signal..."
-while true; do
-    if [ -f "$INPUT_DIR/signal/dryrun_finish" ]; then
-        echo "[INFO] dryrun_finish file detected in signal dir, starting measurement..."
-        break
-    fi
+# Wait for first archive to appear
+echo "[INFO] Waiting for first archive in $ARCHIVES_DIR..."
+while [ ! -f "$ARCHIVES_DIR/iter_0000.tar.gz" ]; do
     sleep 3
 done
+echo "[INFO] First archive detected, starting coverage measurement loop"
 
-# Run coverage measurement every 30 minutes
-ITERATION=0
-while true; do
-    ITERATION=$((ITERATION + 1))
-    # Calculate elapsed time in minutes
-    current_time=$(date +%s)
-    elapsed=$((current_time - COVERAGE_START_TIME))
-    elapsed_minutes=$((elapsed / 60))
+run_input() {
+    local input_file="$1"
+    local tmp
+    tmp=$(mktemp)
+    cp "$input_file" "$tmp"
 
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running coverage measurement..."
+    local cmd_args=()
+    for arg in "${target_args[@]}"; do
+        [ "$arg" = "@@" ] && cmd_args+=("$tmp") || cmd_args+=("$arg")
+    done
 
-    # Check if coverage output directory is still accessible
-    if [ ! -w /coverage_out ]; then
-        echo "[ERROR] Coverage output directory /coverage_out is not accessible"
-        exit 1
-    fi
-
-    # Process all inputs in queue directory
-    if [ -d "$INPUT_DIR" ]; then
-        INPUT_COUNT=0
-        tmp_input=$(mktemp)
-        for input_file in "$INPUT_DIR"/*; do
-            [ -f "$input_file" ] || continue
-
-            INPUT_COUNT=$((INPUT_COUNT + 1))
-
-            # Copy input to temp file to prevent coverage binary from modifying originals
-            cp "$input_file" "$tmp_input"
-
-            # Build command arguments, replacing @@ with temp file path
-            cmd_args=()
-            for arg in "${target_args[@]}"; do
-                if [ "$arg" = "@@" ]; then
-                    cmd_args+=("$tmp_input")
-                else
-                    cmd_args+=("$arg")
-                fi
-            done
-
-            # Execute coverage binary on input
-            # Suppress errors as some inputs may cause crashes
-            if [ -n "$target_stdin_from_file" ]; then
-                # Use stdin redirection
-                timeout 1 "$COVERAGE_BIN" "${cmd_args[@]}" < "$tmp_input" >/dev/null 2>&1 || true
-            else
-                # Use command line arguments
-                timeout 1 "$COVERAGE_BIN" "${cmd_args[@]}" >/dev/null 2>&1 || true
-            fi
-        done
-        rm -f "$tmp_input"
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Processed $INPUT_COUNT inputs"
+    if [ -n "$target_stdin_from_file" ]; then
+        timeout 1 "$COVERAGE_BIN" "${cmd_args[@]}" < "$tmp" >/dev/null 2>&1 || true
     else
-        echo "[ERROR] Input directory not found: $INPUT_DIR"
-        exit 1
+        timeout 1 "$COVERAGE_BIN" "${cmd_args[@]}" >/dev/null 2>&1 || true
+    fi
+    rm -f "$tmp"
+}
+
+ITERATION=0
+recent_coverage=""
+saturation_count=0
+
+while true; do
+    ARCHIVE_PATH="$ARCHIVES_DIR/$(printf 'iter_%04d.tar.gz' $ITERATION)"
+
+    # Wait for this iteration's archive
+    while [ ! -f "$ARCHIVE_PATH" ]; do
+        sleep 3
+    done
+
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Processing archive: $ARCHIVE_PATH"
+
+    # Reset gcov counters (each archive is a full snapshot)
+    lcov --zerocounters --directory "$target_source_dir" -q 2>/dev/null || true
+
+    INPUT_COUNT=0
+    if [ -s "$ARCHIVE_PATH" ]; then
+        EXTRACT_DIR=$(mktemp -d)
+        if ! tar xzf "$ARCHIVE_PATH" -C "$EXTRACT_DIR" 2>/tmp/tar_extract_err; then
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: tar extraction failed: $(cat /tmp/tar_extract_err)"
+        fi
+        EXTRACTED_QUEUE_COUNT=$(find "$EXTRACT_DIR" -path "*/findings/queue/id:*" -type f 2>/dev/null | wc -l)
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Extracted $EXTRACTED_QUEUE_COUNT queue files from archive"
+
+        while IFS= read -r input_file; do
+            INPUT_COUNT=$((INPUT_COUNT + 1))
+            run_input "$input_file"
+        done < <(find "$EXTRACT_DIR" -path "*/findings/queue/id:*" -type f 2>/dev/null)
+
+        rm -rf "$EXTRACT_DIR"
+    else
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Empty archive, skipping"
     fi
 
-    # Generate coverage report if lcov is available
-    if command -v lcov >/dev/null 2>&1; then
-        # Capture coverage data including branch coverage
-        if lcov --capture --directory "$target_source_dir" --output-file coverage.info \
-                --rc lcov_branch_coverage=1 >/dev/null 2>&1; then
-            # Generate HTML report with branch coverage
-            if genhtml coverage.info --output-directory html \
-                    --rc genhtml_branch_coverage=1 > genhtml.tmp 2>&1; then
-                echo "[$(date '+%Y-%m-%d %H:%M:%S')] Coverage report generated successfully"
-
-                # Extract last 3 lines (coverage summary) and log with elapsed time
-                tail -3 genhtml.tmp | while read line; do
-                    echo "[${elapsed_minutes}m] $line" >> "$COVERAGE_LOG"
-                done
+    # Generate coverage report
+    if lcov --capture --directory "$target_source_dir" --output-file coverage.info \
+            --rc lcov_branch_coverage=1 >/dev/null 2>&1; then
+        if genhtml coverage.info --output-directory html \
+                --rc genhtml_branch_coverage=1 > genhtml.tmp 2>&1; then
+            branch_coverage=$(grep "branches" genhtml.tmp | grep -oP '\d+(?= of)' | head -1)
+            if [ -n "$branch_coverage" ]; then
+                if [ -z "$MIN_ITERATIONS" ] || [ "$ITERATION" -gt "$MIN_ITERATIONS" ]; then
+                    if [ "$branch_coverage" = "$recent_coverage" ]; then
+                        saturation_count=$((saturation_count + 1))
+                    else
+                        saturation_count=0
+                    fi
+                fi
+                recent_coverage="$branch_coverage"
             fi
+            if [ -n "$MIN_ITERATIONS" ] && [ "$ITERATION" -le "$MIN_ITERATIONS" ]; then
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] Processed $INPUT_COUNT inputs | iter: $ITERATION/$MIN_ITERATIONS (min) | branch coverage: ${branch_coverage:-N/A} | saturation: (pending)"
+            else
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] Processed $INPUT_COUNT inputs | iter: $ITERATION | branch coverage: ${branch_coverage:-N/A} | saturation: $saturation_count${SATURATION_WINDOW:+/$SATURATION_WINDOW}"
+            fi
+            tail -3 genhtml.tmp | while IFS= read -r line; do
+                echo "[iter_$ITERATION] $line" >> "$COVERAGE_LOG"
+            done
         fi
     fi
 
-    # Check iteration limit after measurement
-    if [ -n "$MAX_ITERATIONS" ] && [ "$ITERATION" -ge "$MAX_ITERATIONS" ]; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Reached max iterations ($MAX_ITERATIONS). Exiting."
-        echo "$(date '+%Y-%m-%d %H:%M:%S')" > /coverage_out/measurement_done
+    ITERATION=$((ITERATION + 1))
+
+    # Check saturation
+    if [ -n "$SATURATION_WINDOW" ] && [ "$saturation_count" -ge "$SATURATION_WINDOW" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Saturation reached ($saturation_count/$SATURATION_WINDOW). Exiting."
+        touch /coverage_out/saturation_done
         exit 0
     fi
 
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Waiting $((MEASUREMENT_INTERVAL / 60)) minutes until next measurement..."
-    sleep "$MEASUREMENT_INTERVAL"
+    # Check iteration limit
+    if [ -n "$MAX_ITERATIONS" ] && [ "$ITERATION" -gt "$MAX_ITERATIONS" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Reached max iterations ($MAX_ITERATIONS). Exiting."
+        exit 0
+    fi
+
+    rm -f "$ARCHIVE_PATH"
 done
