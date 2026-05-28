@@ -103,7 +103,7 @@ echo "[INFO] Coverage measurement started for: $TARGET"
 echo "[INFO] Coverage binary: $COVERAGE_BIN"
 echo "[INFO] Input directory: $INPUT_DIR"
 echo "[INFO] Output: /coverage_out"
-echo "[INFO] Measurement interval: 30 minutes"
+echo "[INFO] Measurement interval: 15 minutes"
 echo "[INFO] Target args: ${target_args[*]}"
 if [ -n "$target_stdin_from_file" ]; then
     echo "[INFO] Input method: stdin from file"
@@ -116,20 +116,19 @@ COVERAGE_LOG="/coverage_out/coverage.log"
 # Initialize coverage saturation tracking
 recent_coverage=0
 saturation_count=0
-saturation_window=24
-min_iterations=0
+saturation_window=96
+min_iterations=384
+max_iterations=672
 iteration_count=0
 
 # Wait for dryrun to finish before starting measurement loop
 echo "[INFO] Waiting for dryrun_finish signal..."
 while true; do
-    if [ -f "$INPUT_DIR/dryrun_finish" ]; then
-        echo "[INFO] dryrun_finish file detected, removing it..."
-        rm -f "$INPUT_DIR/dryrun_finish"
-        echo "[INFO] Starting main coverage measurement loop..."
+    if [ -f "$INPUT_DIR/signal/dryrun_finish" ]; then
+        echo "[INFO] dryrun_finish file detected, starting main coverage measurement loop..."
         break
     fi
-    sleep 3
+    sleep 1
 done
 
 # Run coverage measurement every 30 minutes
@@ -139,7 +138,6 @@ while true; do
     elapsed=$((current_time - COVERAGE_START_TIME))
     elapsed_minutes=$((elapsed / 60))
 
-    iteration_count=$((iteration_count + 1))
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running coverage measurement (iteration: $iteration_count)..."
 
     # Check if coverage output directory is still accessible
@@ -203,18 +201,23 @@ while true; do
                     # Extract covered branches count (e.g., "branches...: 7.8% (4473 of 57470 branches)" -> 4473)
                     new_coverage=$(echo "$branch_line" | grep -oP '\d+(?= of)' | head -1)
 
-                    # Check if coverage changed
                     if [ -n "$new_coverage" ]; then
-                        if [ "$recent_coverage" = "$new_coverage" ]; then
-                            if [ $iteration_count -gt $min_iterations ]; then
+                        if [ $iteration_count -gt $min_iterations ]; then
+                            # Past minimum iterations: track saturation
+                            if [ "$recent_coverage" = "$new_coverage" ]; then
                                 saturation_count=$((saturation_count + 1))
                                 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Coverage unchanged (${recent_coverage} branches), saturation_count: $saturation_count (iteration: $iteration_count)"
                             else
-                                echo "[$(date '+%Y-%m-%d %H:%M:%S')] Coverage unchanged (${recent_coverage} branches), skipping saturation count (iteration: $iteration_count/$min_iterations)"
+                                echo "[$(date '+%Y-%m-%d %H:%M:%S')] Branch coverage updated: ${recent_coverage} → ${new_coverage} branches (iteration: $iteration_count)"
+                                saturation_count=0
                             fi
                         else
-                            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Branch coverage updated: ${recent_coverage} → ${new_coverage} branches (iteration: $iteration_count)"
-                            saturation_count=0
+                            # Before minimum iterations: log only, no saturation tracking
+                            if [ "$recent_coverage" = "$new_coverage" ]; then
+                                echo "[$(date '+%Y-%m-%d %H:%M:%S')] Coverage unchanged (${recent_coverage} branches), skipping saturation count (iteration: $iteration_count/$min_iterations)"
+                            else
+                                echo "[$(date '+%Y-%m-%d %H:%M:%S')] Branch coverage updated: ${recent_coverage} → ${new_coverage} branches (iteration: $iteration_count)"
+                            fi
                         fi
 
                         recent_coverage="$new_coverage"
@@ -234,12 +237,19 @@ while true; do
     # Print current coverage status
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Current Branch Coverage: ${recent_coverage} branches | Iteration: ${iteration_count} | Saturation Count: ${saturation_count}/${saturation_window}"
 
+    # Check if max iterations (7 days = 672 iterations at 15-min intervals) reached
+    if [ $iteration_count -ge $max_iterations ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Max iterations of $max_iterations reached. Terminating..."
+        break
+    fi
+
     # Check if saturation threshold reached
     if [ $saturation_count -ge $saturation_window ]; then
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] Saturation threshold reached (count: $saturation_count/$saturation_window). Terminating..."
         break
     fi
 
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Waiting 30 minutes until next measurement..."
-    sleep 1800  # 30 minutes
+    iteration_count=$((iteration_count + 1))
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Waiting 15 minutes until next measurement..."
+    sleep 900  # 15 minutes
 done
