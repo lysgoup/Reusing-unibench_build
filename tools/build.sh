@@ -153,8 +153,8 @@ elif [ "$FUZZER" = "angora-storfuzz" ]; then
         docker build -t "myeonggyu/angora-storfuzz" "$UNIBENCH/../Angora_storfuzz"
         docker build -t "unifuzz/unibench:angora-storfuzz_step1" "$UNIBENCH/angora-storfuzz_step1"
         docker build -t "unifuzz/unibench:angora-storfuzz_step2" "$UNIBENCH/angora-storfuzz_step2"
-        docker build -t "${IMG_NAME}-base" -f "$UNIBENCH/angora-storfuzz/Dockerfile" "$UNIBENCH/../Angora_storfuzz"
-        docker build -t "$IMG_NAME" -f "$UNIBENCH/angora-storfuzz_fuzzer_only/Dockerfile" "$UNIBENCH/../Angora_storfuzz"
+        docker build -t "${IMG_NAME}-base" -f "$UNIBENCH/angora-storfuzz/Dockerfile" "$UNIBENCH/../"
+        docker build -t "$IMG_NAME" -f "$UNIBENCH/angora-storfuzz_fuzzer_only/Dockerfile" "$UNIBENCH/../"
         set +x
         echo "$LLVM_HASH" > "$CACHE_DIR/llvm.hash"
         echo "$FUZZER_HASH" > "$CACHE_DIR/fuzzer.hash"

@@ -79,6 +79,7 @@ if [ -n "$QUEUE_FILE" ]; then
 fi
 
 # Run angora_storfuzz
-STORFUZZ_VERBOSE=1 RUST_LOG=angora=debug /angora/angora_storfuzz -i "$SEED" -o "$OUTPUT_DIR" \
+# STORFUZZ_VERBOSE=1 RUST_LOG=angora=debug 
+/angora/angora_storfuzz -i "$SEED" -o "$OUTPUT_DIR" \
     -t "$TRACK_BIN" $queue_file_flag $FUZZARGS -- "$FAST_BIN" "${ARGS[@]}" 2>&1
 
