@@ -144,9 +144,6 @@ while true; do
 
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Processing archive: $ARCHIVE_PATH"
 
-    # Reset gcov counters (each archive is a full snapshot)
-    lcov --zerocounters --directory "$target_source_dir" -q 2>/dev/null || true
-
     INPUT_COUNT=0
     if [ -s "$ARCHIVE_PATH" ]; then
         EXTRACT_DIR=$(mktemp -d)

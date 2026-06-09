@@ -95,9 +95,9 @@ elif [ "$FUZZER" = "angora-reusing" ]; then
         fi
     fi
 
-    # llvm_mode 변경 여부 확인
-    if [ "$LLVM_HASH" != "$CACHED_LLVM_HASH" ]; then
-        echo_time "llvm_mode changed. Full rebuild from step1."
+    # llvm_mode 또는 common 변경 여부 확인 (둘 다 full rebuild 필요)
+    if [ "$LLVM_HASH" != "$CACHED_LLVM_HASH" ] || [ "$COMMON_HASH" != "$CACHED_COMMON_HASH" ]; then
+        echo_time "llvm_mode or common changed. Full rebuild from step1."
         set -x
         docker build -t "yunseo/angora-reusing" "$UNIBENCH/../"
         docker build -t "unifuzz/unibench:angora-reusing_step1" "$UNIBENCH/angora-reusing_step1"
@@ -108,13 +108,12 @@ elif [ "$FUZZER" = "angora-reusing" ]; then
         echo "$LLVM_HASH" > "$CACHE_DIR/llvm.hash"
         echo "$FUZZER_HASH" > "$CACHE_DIR/fuzzer.hash"
         echo "$COMMON_HASH" > "$CACHE_DIR/common.hash"
-    elif [ "$FUZZER_HASH" != "$CACHED_FUZZER_HASH" ] || [ "$COMMON_HASH" != "$CACHED_COMMON_HASH" ]; then
-        echo_time "Fuzzer or common code changed. Rebuilding fuzzer only."
+    elif [ "$FUZZER_HASH" != "$CACHED_FUZZER_HASH" ]; then
+        echo_time "Fuzzer code changed. Rebuilding fuzzer only."
         set -x
         docker build -t "$IMG_NAME" -f "$UNIBENCH/angora-reusing_fuzzer_only/Dockerfile" "$UNIBENCH/../"
         set +x
         echo "$FUZZER_HASH" > "$CACHE_DIR/fuzzer.hash"
-        echo "$COMMON_HASH" > "$CACHE_DIR/common.hash"
     else
         echo_time "No changes detected. Skipping build."
     fi

@@ -64,26 +64,53 @@ done
 echo_ts "dryrun_finish detected, starting archive loop (interval: ${INTERVAL}s)"
 
 ITERATION=0
+declare -A SEEN_FILES
 
 while true; do
     ARCHIVE_PATH="$ARCHIVE_DIR/$(printf 'iter_%04d.tar.gz' $ITERATION)"
 
     ITER_START=$(date +%s)
     CURRENT_QUEUE_DIR=$(find_queue_dir)
+
+    # Collect only files not seen in previous iterations
+    NEW_FILES=()
     if [ -n "$CURRENT_QUEUE_DIR" ]; then
         QUEUE_FILE_COUNT=$(find "$CURRENT_QUEUE_DIR" -maxdepth 1 -name 'id:*' -type f 2>/dev/null | wc -l)
         echo_ts "iter $ITERATION: queue has $QUEUE_FILE_COUNT files in $CURRENT_QUEUE_DIR"
+        while IFS= read -r f; do
+            fname=$(basename "$f")
+            if [ -z "${SEEN_FILES[$fname]+x}" ]; then
+                NEW_FILES+=("$f")
+                SEEN_FILES[$fname]=1
+            fi
+        done < <(find "$CURRENT_QUEUE_DIR" -maxdepth 1 -name 'id:*' -type f 2>/dev/null | sort)
     else
+        QUEUE_FILE_COUNT=0
         echo_ts "iter $ITERATION: queue dir not found"
     fi
-    echo_ts "iter $ITERATION: archiving $CACHE_DIR..."
+    NEW_FILE_COUNT=${#NEW_FILES[@]}
+    echo_ts "iter $ITERATION: $NEW_FILE_COUNT new files to archive"
+
     ARCHIVE_TMP="${ARCHIVE_PATH}.tmp"
-    tar czf "$ARCHIVE_TMP" -C "$CACHE_DIR" . 2>/dev/null
+    if [ "$NEW_FILE_COUNT" -gt 0 ]; then
+        RELATIVE_QUEUE="${CURRENT_QUEUE_DIR#$CACHE_DIR/}"
+        TEMP_DIR=$(mktemp -d)
+        mkdir -p "$TEMP_DIR/$RELATIVE_QUEUE"
+        for f in "${NEW_FILES[@]}"; do
+            cp "$f" "$TEMP_DIR/$RELATIVE_QUEUE/"
+        done
+        echo_ts "iter $ITERATION: archiving $NEW_FILE_COUNT new files..."
+        tar czf "$ARCHIVE_TMP" -C "$TEMP_DIR" "$RELATIVE_QUEUE" 2>/dev/null
+        rm -rf "$TEMP_DIR"
+    else
+        echo_ts "iter $ITERATION: no new files, creating empty archive"
+        tar czf "$ARCHIVE_TMP" -T /dev/null 2>/dev/null
+    fi
     TAR_EXIT=$?
     if [ "$TAR_EXIT" -eq 0 ] || [ "$TAR_EXIT" -eq 1 ]; then
         mv "$ARCHIVE_TMP" "$ARCHIVE_PATH"
         ARCHIVE_QUEUE_COUNT=$(tar tzf "$ARCHIVE_PATH" 2>/dev/null | grep -c 'findings/queue/id:' || echo 0)
-        echo_ts "iter $ITERATION: done -> $ARCHIVE_PATH (archive contains $ARCHIVE_QUEUE_COUNT queue files, queue had $QUEUE_FILE_COUNT)"
+        echo_ts "iter $ITERATION: done -> $ARCHIVE_PATH ($ARCHIVE_QUEUE_COUNT new files, total queue $QUEUE_FILE_COUNT)"
     else
         rm -f "$ARCHIVE_TMP"
         echo_ts "iter $ITERATION: tar FAILED (exit code $TAR_EXIT) -> $ARCHIVE_PATH"

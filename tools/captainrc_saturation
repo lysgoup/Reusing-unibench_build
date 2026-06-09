@@ -13,12 +13,12 @@ WORKDIR=../_saturation
 REPEAT=5
 
 # [WORKER_POOL]: a space-separated list of logical cores to allocate
-WORKER_POOL="$(seq 45 191)"
+WORKER_POOL="$(seq 50 191)"
 
 # FUZZERS: an array of fuzzer names (from magma/fuzzers/*) to evaluate
 FUZZERS=(angora)
 
 # [fuzzer_TARGETS]: an array of target names (from magma/targets/*) to fuzz with
-angora_TARGETS=(jhead)
+angora_TARGETS=(ffmpeg)
 
 # [target_SEED]
