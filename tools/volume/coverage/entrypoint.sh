@@ -111,6 +111,10 @@ while [ ! -f "$ARCHIVES_DIR/iter_0000.tar.gz" ]; do
 done
 echo "[INFO] First archive detected, starting coverage measurement loop"
 
+# Reset gcov counters to eliminate any pre-existing .gcda data baked into the image
+lcov --zerocounters --directory "$target_source_dir" -q 2>/dev/null || true
+echo "[INFO] gcov counters reset"
+
 run_input() {
     local input_file="$1"
     local tmp
