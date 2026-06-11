@@ -1,8 +1,8 @@
 # captainrc for forkserver_libafl / forkserver_storfuzz experiments
 # Usage: ./run.sh captainrc_forkserver
 
-WORKDIR=../_result
-REPEAT=2
+WORKDIR=../_test
+REPEAT=5
 WORKER_POOL="0 1 2 3 4 5 6 7 8 9 10 11"
 TIMEOUT=24h
 # exiv2    imginfo  jq mp3gain  pdftotext  ||   libpng_read_fuzzer  flvmeta    wav2swf 

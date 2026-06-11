@@ -12,6 +12,7 @@ from collections import defaultdict
 
 try:
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import MaxNLocator
 except ImportError:
     print("Error: matplotlib is required. Install with: pip install matplotlib")
     sys.exit(1)
@@ -291,8 +292,8 @@ def plot_branch_graphs(graph_dir, data_dir, interval):
         else:
             num_points = len(next(iter(campaign_data.values())))
 
-        # Generate time points (in minutes)
-        time_points = [i * interval for i in range(num_points)]
+        # Generate time points (in hours)
+        time_points = [i * interval / 60 for i in range(num_points)]
 
         # Create figure with larger height
         fig, ax = plt.subplots(figsize=(12, 8))
@@ -326,9 +327,10 @@ def plot_branch_graphs(graph_dir, data_dir, interval):
 
         # Set X-axis range to start exactly at 0
         ax.set_xlim(0, time_points[-1])
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 
         # Set labels and title
-        ax.set_xlabel('Time (minutes)')
+        ax.set_xlabel('Time (hours)')
         ax.set_ylabel('Branch Hit Count')
         ax.set_title(f'{target_name} - {fuzzer_name} - Branch Hit Count Progress')
         ax.grid(True, alpha=0.3)
@@ -415,9 +417,9 @@ def plot_comparison_graphs(graph_dir, data_dir, interval):
         if avg_data is None or not campaign_data:
             continue
 
-        # Generate time points (in minutes)
+        # Generate time points (in hours)
         num_points = len(avg_data)
-        time_points = [i * interval for i in range(num_points)]
+        time_points = [i * interval / 60 for i in range(num_points)]
 
         # Calculate min and max values for each time point
         max_data = []
@@ -488,9 +490,10 @@ def plot_comparison_graphs(graph_dir, data_dir, interval):
 
         # Set X-axis range to start exactly at 0
         ax.set_xlim(0, time_points[-1])
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 
         # Set labels and title
-        ax.set_xlabel('Time (minutes)')
+        ax.set_xlabel('Time (hours)')
         ax.set_ylabel('Branch Hit Count')
         ax.set_title(f'{target_name} - Fuzzer Comparison')
         ax.grid(True, alpha=0.3)
