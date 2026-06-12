@@ -210,7 +210,7 @@ def collect_and_save_branch_data(workdir, coverage_dir, data_dir):
     return dict(data_summary), files_created
 
 
-def plot_branch_graphs(graph_dir, data_dir, interval):
+def plot_branch_graphs(graph_dir, data_dir, interval, log_x=False):
     """
     Generate branch hit count graphs from data files.
 
@@ -325,9 +325,13 @@ def plot_branch_graphs(graph_dir, data_dir, interval):
                 margin = max(10, min_val * 0.01)
             ax.set_ylim(min_val - margin, max_val + margin)
 
-        # Set X-axis range to start exactly at 0
-        ax.set_xlim(0, time_points[-1])
-        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        # Set X-axis range and scale
+        if log_x:
+            ax.set_xscale('log')
+            ax.set_xlim(time_points[1] if time_points[0] == 0 else time_points[0], time_points[-1])
+        else:
+            ax.set_xlim(0, time_points[-1])
+            ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 
         # Set labels and title
         ax.set_xlabel('Time (hours)')
@@ -351,7 +355,7 @@ def plot_branch_graphs(graph_dir, data_dir, interval):
         print(f"✓ Created: {output_filename}")
 
 
-def plot_comparison_graphs(graph_dir, data_dir, interval):
+def plot_comparison_graphs(graph_dir, data_dir, interval, log_x=False):
     """
     Generate comparison graphs for targets with multiple fuzzers.
     Shows avg lines with min/max ranges from different fuzzers for the same target.
@@ -488,9 +492,13 @@ def plot_comparison_graphs(graph_dir, data_dir, interval):
                 margin = max(10, min_val * 0.01)
             ax.set_ylim(min_val - margin, max_val + margin)
 
-        # Set X-axis range to start exactly at 0
-        ax.set_xlim(0, time_points[-1])
-        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        # Set X-axis range and scale
+        if log_x:
+            ax.set_xscale('log')
+            ax.set_xlim(time_points[1] if time_points[0] == 0 else time_points[0], time_points[-1])
+        else:
+            ax.set_xlim(0, time_points[-1])
+            ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 
         # Set labels and title
         ax.set_xlabel('Time (hours)')
@@ -521,10 +529,13 @@ def main():
     parser.add_argument('workdir', help='Result directory path (_result directory)')
     parser.add_argument('--interval', type=int, required=True,
                         help='Measurement interval in minutes (e.g. 10)')
+    parser.add_argument('--log-x', action='store_true',
+                        help='Use log scale on the x-axis')
 
     args = parser.parse_args()
     workdir = Path(args.workdir).resolve()
     interval = args.interval
+    log_x = args.log_x
 
     if not check_coverage_directory(workdir):
         sys.exit(1)
@@ -544,10 +555,10 @@ def main():
                 print(f"    - {fuzzer}: {count} campaigns")
 
     print(f"\nGenerating graphs...")
-    plot_branch_graphs(graph_dir, data_dir, interval)
+    plot_branch_graphs(graph_dir, data_dir, interval, log_x)
 
     print(f"\nGenerating comparison graphs...")
-    plot_comparison_graphs(graph_dir, data_dir, interval)
+    plot_comparison_graphs(graph_dir, data_dir, interval, log_x)
     print("\n✓ Graph generation complete!")
 
 
