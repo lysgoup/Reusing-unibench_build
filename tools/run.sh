@@ -242,10 +242,19 @@ for FUZZER in "${BUILT_FUZZER[@]}"; do
     for TARGET in "${TARGETS[@]}"; do
         export TARGET
         export FUZZARGS="$(get_var_or_default "$FUZZER" "$TARGET" 'FUZZARGS')"
-        export SEED="$(get_var_or_default "$TARGET" 'SEED')"
         export QUEUE_FILE="$(get_var_or_default "$TARGET" 'QUEUE_FILE')"
+        DEFAULT_SEED="$(get_var_or_default "$TARGET" 'SEED')"
         echo_time "Starting campaigns for $TARGET $ARGS"
         for ((i=0; i<REPEAT; i++)); do
+            # Per-trial seed: use TARGET_SEEDS[i] if defined, else fall back to TARGET_SEED
+            TARGET_NORMALIZED="${TARGET//-/_}"
+            seeds_var="${TARGET_NORMALIZED}_SEEDS[@]"
+            trial_seeds=("${!seeds_var}")
+            if [ ${#trial_seeds[@]} -gt 0 ] && [ -n "${trial_seeds[$i]}" ]; then
+                export SEED="${trial_seeds[$i]}"
+            else
+                export SEED="$DEFAULT_SEED"
+            fi
             export NUMWORKERS="$(get_var_or_default "$FUZZER" 'CAMPAIGN_WORKERS')"
             export AFFINITY="$(allocate_workers)"
             start_ex &

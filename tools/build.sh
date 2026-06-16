@@ -17,55 +17,25 @@ source "$UNIBENCH/tools/common.sh"
 
 # angora and angora-reusing require special handling
 if [ "$FUZZER" = "angora" ]; then
-    echo_time "Smart build for angora with hash-based caching"
-    # Angora 내부의 fuzzer, common, llvm_mode 폴더의 해시 계산
-    FUZZER_HASH=$(tar -cf - "$UNIBENCH/../Angora_original/fuzzer" 2>/dev/null | sha256sum | cut -d' ' -f1)
-    COMMON_HASH=$(tar -cf - "$UNIBENCH/../Angora_original/common" 2>/dev/null | sha256sum | cut -d' ' -f1)
-    LLVM_HASH=$(tar -cf - "$UNIBENCH/../Angora_original/llvm_mode" 2>/dev/null | sha256sum | cut -d' ' -f1)
-    # 캐시 디렉토리 및 파일 확인
-    CACHE_DIR="$UNIBENCH/../Angora_original/_build_cache"
-    mkdir -p "$CACHE_DIR"
-    CACHED_LLVM_HASH=""
-    CACHED_FUZZER_HASH=""
-    CACHED_COMMON_HASH=""
+    echo_time "Smart build for angora (shares binary with angora-reusing)"
+    FUZZER_HASH=$(tar -cf - "$UNIBENCH/../fuzzer" 2>/dev/null | sha256sum | cut -d' ' -f1)
+    COMMON_HASH=$(tar -cf - "$UNIBENCH/../common" 2>/dev/null | sha256sum | cut -d' ' -f1)
+    LLVM_HASH=$(tar -cf - "$UNIBENCH/../llvm_mode" 2>/dev/null | sha256sum | cut -d' ' -f1)
+    # angora-reusing과 동일한 캐시를 참조
+    CACHE_DIR="$UNIBENCH/../_build_cache"
+    CACHED_LLVM_HASH=$(cat "$CACHE_DIR/llvm.hash" 2>/dev/null || echo "")
+    CACHED_FUZZER_HASH=$(cat "$CACHE_DIR/fuzzer.hash" 2>/dev/null || echo "")
+    CACHED_COMMON_HASH=$(cat "$CACHE_DIR/common.hash" 2>/dev/null || echo "")
 
-    # cache miss only if all hashes are missing
-    if [ ! -f "$CACHE_DIR/llvm.hash" ] && [ ! -f "$CACHE_DIR/fuzzer.hash" ] && [ ! -f "$CACHE_DIR/common.hash" ]; then
-        echo_time "Cache miss: no hashes found. Full rebuild required."
-    else
-        if [ -f "$CACHE_DIR/llvm.hash" ]; then
-            CACHED_LLVM_HASH=$(cat "$CACHE_DIR/llvm.hash")
-        fi
-        if [ -f "$CACHE_DIR/fuzzer.hash" ]; then
-            CACHED_FUZZER_HASH=$(cat "$CACHE_DIR/fuzzer.hash")
-        fi
-        if [ -f "$CACHE_DIR/common.hash" ]; then
-            CACHED_COMMON_HASH=$(cat "$CACHE_DIR/common.hash")
-        fi
-    fi
-
-    # llvm_mode 변경 여부 확인
-    if [ "$LLVM_HASH" != "$CACHED_LLVM_HASH" ]; then
-        echo_time "llvm_mode changed. Full rebuild from step1."
-        set -x
-        docker build -t "myeonggyu/angora" "$UNIBENCH/../Angora_original"
-        docker build -t "unifuzz/unibench:angora_step1" "$UNIBENCH/angora_step1"
-        docker build -t "unifuzz/unibench:angora_step2" "$UNIBENCH/angora_step2"
-        docker build -t "${IMG_NAME}-base" -f "$UNIBENCH/angora/Dockerfile" "$UNIBENCH/../"
-        docker build -t "$IMG_NAME" -f "$UNIBENCH/angora_fuzzer_only/Dockerfile" "$UNIBENCH/../Angora_original"
-        set +x
-        echo "$LLVM_HASH" > "$CACHE_DIR/llvm.hash"
-        echo "$FUZZER_HASH" > "$CACHE_DIR/fuzzer.hash"
-        echo "$COMMON_HASH" > "$CACHE_DIR/common.hash"
-    elif [ "$FUZZER_HASH" != "$CACHED_FUZZER_HASH" ] || [ "$COMMON_HASH" != "$CACHED_COMMON_HASH" ]; then
-        echo_time "Fuzzer or common code changed. Rebuilding fuzzer only."
-        set -x
-        docker build -t "$IMG_NAME" -f "$UNIBENCH/angora_fuzzer_only/Dockerfile" "$UNIBENCH/../Angora_original"
-        set +x
-        echo "$FUZZER_HASH" > "$CACHE_DIR/fuzzer.hash"
-        echo "$COMMON_HASH" > "$CACHE_DIR/common.hash"
-    else
+    if [ "$LLVM_HASH" = "$CACHED_LLVM_HASH" ] && \
+       [ "$COMMON_HASH" = "$CACHED_COMMON_HASH" ] && \
+       [ "$FUZZER_HASH" = "$CACHED_FUZZER_HASH" ] && \
+       docker image inspect "$IMG_NAME" &>/dev/null; then
         echo_time "No changes detected. Skipping build."
+    else
+        echo_time "Changes detected or angora image missing. Building angora-reusing and tagging as angora."
+        FUZZER=angora-reusing "$UNIBENCH/tools/build.sh"
+        docker tag "unifuzz/unibench:angora-reusing" "$IMG_NAME"
     fi
 elif [ "$FUZZER" = "angora-reusing" ]; then
     echo_time "Special build for angora-reusing"
@@ -99,7 +69,7 @@ elif [ "$FUZZER" = "angora-reusing" ]; then
     if [ "$LLVM_HASH" != "$CACHED_LLVM_HASH" ] || [ "$COMMON_HASH" != "$CACHED_COMMON_HASH" ]; then
         echo_time "llvm_mode or common changed. Full rebuild from step1."
         set -x
-        docker build -t "myeonggyu/angora-reusing" "$UNIBENCH/../"
+        docker build -t "yunseo/angora-reusing" "$UNIBENCH/../"
         docker build -t "unifuzz/unibench:angora-reusing_step1" "$UNIBENCH/angora-reusing_step1"
         docker build -t "unifuzz/unibench:angora-reusing_step2" "$UNIBENCH/angora-reusing_step2"
         docker build -t "${IMG_NAME}-base" -f "$UNIBENCH/angora-reusing/Dockerfile" "$UNIBENCH/../"
@@ -149,7 +119,7 @@ elif [ "$FUZZER" = "angora-storfuzz" ]; then
     if [ "$LLVM_HASH" != "$CACHED_LLVM_HASH" ]; then
         echo_time "llvm_mode changed. Full rebuild from step1."
         set -x
-        docker build -t "myeonggyu/angora-storfuzz" "$UNIBENCH/../Angora_storfuzz"
+        docker build -t "yunseo/angora-storfuzz" "$UNIBENCH/../Angora_storfuzz"
         docker build -t "unifuzz/unibench:angora-storfuzz_step1" "$UNIBENCH/angora-storfuzz_step1"
         docker build -t "unifuzz/unibench:angora-storfuzz_step2" "$UNIBENCH/angora-storfuzz_step2"
         docker build -t "${IMG_NAME}-base" -f "$UNIBENCH/angora-storfuzz/Dockerfile" "$UNIBENCH/../"
