@@ -524,6 +524,117 @@ def plot_comparison_graphs(graph_dir, data_dir, interval, log_x=False):
         print(f"\n✓ Created {comparison_count} comparison graphs")
 
 
+def plot_per_trial_comparison_graphs(graph_dir, data_dir, interval, log_x=False):
+    """
+    Generate per-trial comparison graphs.
+    For each (target, trial_num) pair that exists in multiple fuzzers,
+    plot each fuzzer's line for that specific trial on the same graph.
+
+    Args:
+        graph_dir: Path to graph directory (output location)
+        data_dir: Path to data directory (input files)
+        interval: Measurement interval in minutes
+        log_x: Whether to use log scale on x-axis
+    """
+    graph_dir = Path(graph_dir)
+    data_dir = Path(data_dir)
+
+    if not data_dir.exists():
+        return
+
+    data_files = sorted(data_dir.glob('*_branch_count.txt'))
+    if not data_files:
+        return
+
+    # target -> fuzzer -> campaign_num -> [values]
+    all_data = {}
+
+    for data_file in data_files:
+        filename = data_file.stem.replace('_branch_count', '')
+        parts = filename.split('_', 1)
+        if len(parts) != 2:
+            continue
+
+        target_name, fuzzer_name = parts[0], parts[1]
+
+        try:
+            with open(data_file, 'r') as f:
+                lines = f.readlines()
+        except Exception:
+            continue
+
+        for line in lines:
+            line_parts = line.strip().split()
+            if not line_parts or line_parts[0] == 'avg':
+                continue
+            campaign_num = line_parts[0]
+            values = [float(x) for x in line_parts[1:]]
+
+            all_data.setdefault(target_name, {}).setdefault(fuzzer_name, {})[campaign_num] = values
+
+    colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'pink', 'gray']
+    trial_count = 0
+
+    for target_name in sorted(all_data.keys()):
+        fuzzers = all_data[target_name]
+
+        # Collect all trial nums that appear in at least 2 fuzzers
+        trial_to_fuzzers = {}
+        for fuzzer_name, campaigns in fuzzers.items():
+            for campaign_num in campaigns:
+                trial_to_fuzzers.setdefault(campaign_num, []).append(fuzzer_name)
+
+        for campaign_num, fuzzer_list in sorted(trial_to_fuzzers.items(), key=lambda x: int(x[0])):
+            if len(fuzzer_list) < 2:
+                continue
+
+            fig, ax = plt.subplots(figsize=(12, 8))
+            all_values = []
+
+            for idx, fuzzer_name in enumerate(sorted(fuzzer_list)):
+                values = fuzzers[fuzzer_name][campaign_num]
+                num_points = len(values)
+                time_points = [i * interval / 60 for i in range(num_points)]
+                color = colors[idx % len(colors)]
+                ax.plot(time_points, values, color=color, linewidth=2,
+                        label=fuzzer_name, marker='o', markersize=2.5)
+                all_values.extend(values)
+
+            if all_values:
+                min_val = min(all_values)
+                max_val = max(all_values)
+                margin = max((max_val - min_val) * 0.25, 50)
+                if margin == 0:
+                    margin = max(10, min_val * 0.01)
+                ax.set_ylim(min_val - margin, max_val + margin)
+
+            if log_x:
+                ax.set_xscale('log')
+                ax.set_xlim(time_points[1] if time_points[0] == 0 else time_points[0], time_points[-1])
+            else:
+                ax.set_xlim(0, time_points[-1])
+                ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+
+            ax.set_xlabel('Time (hours)')
+            ax.set_ylabel('Branch Hit Count')
+            ax.set_title(f'{target_name} - Trial {campaign_num} Comparison')
+            ax.grid(True, alpha=0.3)
+            ax.legend(loc='best')
+
+            output_filename = f"{target_name}_trial{campaign_num}_comparison.png"
+            output_path = graph_dir / output_filename
+
+            plt.tight_layout()
+            plt.savefig(output_path, dpi=150, bbox_inches='tight')
+            plt.close()
+
+            print(f"✓ Created: {output_filename}")
+            trial_count += 1
+
+    if trial_count > 0:
+        print(f"\n✓ Created {trial_count} per-trial comparison graphs")
+
+
 def main():
     parser = argparse.ArgumentParser(description='Generate branch coverage visualization graphs')
     parser.add_argument('workdir', help='Result directory path (_result directory)')
@@ -531,6 +642,8 @@ def main():
                         help='Measurement interval in minutes (e.g. 10)')
     parser.add_argument('--log-x', action='store_true',
                         help='Use log scale on the x-axis')
+    parser.add_argument('--per-trial', action='store_true',
+                        help='Generate per-trial comparison graphs (one graph per target+trial)')
 
     args = parser.parse_args()
     workdir = Path(args.workdir).resolve()
@@ -559,6 +672,11 @@ def main():
 
     print(f"\nGenerating comparison graphs...")
     plot_comparison_graphs(graph_dir, data_dir, interval, log_x)
+
+    if args.per_trial:
+        print(f"\nGenerating per-trial comparison graphs...")
+        plot_per_trial_comparison_graphs(graph_dir, data_dir, interval, log_x)
+
     print("\n✓ Graph generation complete!")
 
 
