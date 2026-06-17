@@ -43,11 +43,18 @@ def compute_ratios(data_dir):
             total = len(a_vals) - 1  # e.g. 96 for 97 snapshots at 15-min intervals
             final = a_vals[-1]
 
-            t = next((i for i, v in enumerate(r_vals) if v >= final), None)
-            if t is None:
-                entries.append((total * 15 / 60, True))
+            if a_vals[-1] == a_vals[0]:  # angora had no coverage growth
+                t = next((i for i, v in enumerate(r_vals) if v > final), None)
+                if t is None:
+                    continue  # reusing also had no growth — exclude this trial
+                else:
+                    entries.append((t * 15 / 60, False))
             else:
-                entries.append((t * 15 / 60, False))
+                t = next((i for i, v in enumerate(r_vals) if v >= final), None)
+                if t is None:
+                    entries.append((total * 15 / 60, True))
+                else:
+                    entries.append((t * 15 / 60, False))
 
         result[program] = entries
 
