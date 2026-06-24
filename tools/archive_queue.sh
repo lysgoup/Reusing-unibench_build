@@ -56,12 +56,22 @@ while true; do
 done
 echo_ts "Queue directory found: $QUEUE_DIR"
 
-# Wait for dryrun_finish signal before starting archive loop
-echo_ts "Waiting for dryrun_finish signal..."
+# Wait for dryrun_finish signal before starting archive loop.
+# Fallback: if the fuzzer never emits the signal within DRYRUN_WAIT_TIMEOUT
+# seconds (0 = wait forever), start archiving anyway so coverage is not lost.
+DRYRUN_WAIT_TIMEOUT="${DRYRUN_WAIT_TIMEOUT:-600}"
+echo_ts "Waiting for dryrun_finish signal (timeout: ${DRYRUN_WAIT_TIMEOUT}s)..."
+_waited=0
 while [ ! -f "$QUEUE_DIR/signal/dryrun_finish" ]; do
     sleep 3
+    _waited=$((_waited + 3))
+    if [ "$DRYRUN_WAIT_TIMEOUT" -gt 0 ] && [ "$_waited" -ge "$DRYRUN_WAIT_TIMEOUT" ]; then
+        echo_ts "WARNING: dryrun_finish not seen after ${DRYRUN_WAIT_TIMEOUT}s; starting archive loop anyway"
+        break
+    fi
 done
-echo_ts "dryrun_finish detected, starting archive loop (interval: ${INTERVAL}s)"
+[ -f "$QUEUE_DIR/signal/dryrun_finish" ] && \
+    echo_ts "dryrun_finish detected, starting archive loop (interval: ${INTERVAL}s)"
 
 ITERATION=0
 declare -A SEEN_FILES
@@ -109,8 +119,9 @@ while true; do
     TAR_EXIT=$?
     if [ "$TAR_EXIT" -eq 0 ] || [ "$TAR_EXIT" -eq 1 ]; then
         mv "$ARCHIVE_TMP" "$ARCHIVE_PATH"
-        ARCHIVE_QUEUE_COUNT=$(tar tzf "$ARCHIVE_PATH" 2>/dev/null | grep -c 'findings/queue/id:' || echo 0)
-        echo_ts "iter $ITERATION: done -> $ARCHIVE_PATH ($ARCHIVE_QUEUE_COUNT new files, total queue $QUEUE_FILE_COUNT)"
+        # NEW_FILE_COUNT already holds the exact number of archived files, so there
+        # is no need to re-read (decompress) the archive we just wrote.
+        echo_ts "iter $ITERATION: done -> $ARCHIVE_PATH ($NEW_FILE_COUNT new files, total queue $QUEUE_FILE_COUNT)"
     else
         rm -f "$ARCHIVE_TMP"
         echo_ts "iter $ITERATION: tar FAILED (exit code $TAR_EXIT) -> $ARCHIVE_PATH"
