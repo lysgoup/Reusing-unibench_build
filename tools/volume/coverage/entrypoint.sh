@@ -1,213 +1,212 @@
 #!/bin/bash
 
 ##
-# Coverage measurement entrypoint for running in container
-# Monitors fuzzer output and executes coverage binary on new inputs
+# Offline coverage-over-time measurement (runs inside the coverage container).
 #
-# Note: Mount structure:
-# - Host: $CACHEDIR/$FUZZER/$TARGET/$CACHECID/ → Container: /unibench_shared/
-# - Fuzzer creates: /unibench_shared/findings/queue/ (real-time output)
+# Consumes the iter_NNNN.tar.gz snapshots produced by archive_queue.sh during a
+# campaign and replays them cumulatively through the gcov-instrumented binary to
+# reconstruct the branch-coverage time series the live measurer used to compute
+# online -- but here it runs AFTER the campaign, on free cores, so it steals no
+# cycles from the fuzzer. Each snapshot index maps to one INTERVAL time bucket.
+#
+# Key differences from the old live entrypoint.sh:
+#   * lcov --summary (cheap) instead of a full genhtml render every interval
+#   * configurable, larger per-input timeout (recovers coverage from slow inputs
+#     that the old hard `timeout 1` SIGTERM dropped before the gcov atexit flush)
+#   * optional CAPTURE_STRIDE to capture every Nth snapshot for very long runs
+#   * a single optional genhtml at the very end (FINAL_HTML=1)
+#
+# Mount structure:
+#   Host .../archives        -> /archives      (ro, iter_NNNN.tar.gz)
+#   Host output dir          -> /coverage_out
+#   Host tools/volume/       -> /volume
+#
+# ENV:
+#   TARGET               (required) target name (targets.conf)
+#   MEASUREMENT_INTERVAL (default 900) seconds per snapshot, only for the CSV time axis
+#   COV_TIMEOUT          (default 5)   per-input replay timeout in seconds
+#   COV_RUNS             (default 8)   times each input is replayed (non-determinism union)
+#   CAPTURE_STRIDE       (default 1)   capture coverage every Nth snapshot (last is always captured)
+#   FINAL_HTML           (default 0)   if 1, also genhtml the final coverage.info
+#
+# Non-determinism handling: each input is replayed COV_RUNS times. Because gcov
+# accumulates hit counts into the same .gcda, the UNION of branches taken across
+# the repeated runs is what gets captured, so order-/uninitialised-/timing-
+# dependent branches that a single run would miss are recovered.
+#
+# Outputs (in /coverage_out):
+#   coverage_over_time.csv   rich per-snapshot series (branches/lines/functions)
+#   coverage.log             legacy 3-lines-per-snapshot format for plot_coverage.py
+#   coverage_final.info      final lcov tracefile
 ##
 
-# Set umask to allow all permissions for created files
 umask 0000
-
-# Check if TARGET is set
-if [ -z "$TARGET" ]; then
-    echo "[ERROR] TARGET environment variable must be specified"
-    exit 1
-fi
-
-# If running as root, switch to measurement user after initial setup
-if [ "$(id -u)" -eq 0 ] && [ "$MEASURE_USER_ID" != "0" ]; then
-    echo "[INFO] Running as root, will switch to user $MEASURE_USER_ID for measurements"
-fi
-
-ARCHIVES_DIR="/coverage_out/archives"
-
-if [ ! -d "$ARCHIVES_DIR" ]; then
-    echo "[ERROR] Archives directory not found: $ARCHIVES_DIR"
-    exit 1
-fi
-
-echo "[INFO] Using archives directory: $ARCHIVES_DIR"
-
-# Disable core dumps to avoid filling up disk
 ulimit -c 0
 
-# Find coverage binary for target
+if [ -z "${TARGET:-}" ]; then
+    echo "[ERROR] TARGET environment variable must be set"
+    exit 1
+fi
+
+ARCHIVES_DIR="/archives"
+OUT_DIR="/coverage_out"
 COVERAGE_BIN="/d/p/cov/${TARGET}"
+MEASUREMENT_INTERVAL="${MEASUREMENT_INTERVAL:-900}"
+COV_TIMEOUT="${COV_TIMEOUT:-5}"
+COV_RUNS="${COV_RUNS:-8}"
+CAPTURE_STRIDE="${CAPTURE_STRIDE:-1}"
+FINAL_HTML="${FINAL_HTML:-0}"
 
-if [ ! -f "$COVERAGE_BIN" ]; then
-    echo "[ERROR] Coverage binary not found at $COVERAGE_BIN"
-    echo "[INFO] Available binaries in /d/p/cov/:"
-    ls -la /d/p/cov/ 2>/dev/null || echo "Directory not found"
-    exit 1
-fi
+[ -d "$ARCHIVES_DIR" ] || { echo "[ERROR] archives dir not found: $ARCHIVES_DIR"; exit 1; }
+[ -f "$COVERAGE_BIN" ] || { echo "[ERROR] coverage binary not found: $COVERAGE_BIN"; ls -la /d/p/cov/ 2>/dev/null; exit 1; }
+command -v lcov >/dev/null 2>&1 || { echo "[ERROR] lcov not found in image"; exit 1; }
 
-# Check if lcov is available (should be installed in Dockerfile)
-if ! command -v lcov >/dev/null 2>&1; then
-    echo "[ERROR] lcov not found - it should be installed in the Docker image"
-    exit 1
-fi
-
-# Change to coverage output directory
-cd /coverage_out
-
-# Load target configuration from targets.conf
 TARGETS_CONF="/volume/targets.conf"
-if [ ! -f "$TARGETS_CONF" ]; then
-    echo "[ERROR] targets.conf not found at $TARGETS_CONF"
-    exit 1
-fi
+[ -f "$TARGETS_CONF" ] || { echo "[ERROR] targets.conf not found at $TARGETS_CONF"; exit 1; }
+set -a; source "$TARGETS_CONF"; set +a
 
-# Source the targets configuration
-set -a
-source "$TARGETS_CONF"
-set +a
-
-# Get target-specific arguments (convert hyphens to underscores for variable lookup)
 TARGET_NORMALIZED="${TARGET//-/_}"
 target_args_var="${TARGET_NORMALIZED}_args[@]"
-
-# Check if target uses stdin redirection
 target_stdin_var="${TARGET_NORMALIZED}_stdin_from_file"
-target_stdin_from_file="${!target_stdin_var}"
-
-# If args are empty, check if stdin is used
-if [ -z "${!target_args_var}" ] && [ "$target_stdin_from_file" != "1" ]; then
-    echo "[ERROR] No args found for target '$TARGET' in targets.conf, and stdin_from_file is not set"
-    exit 1
-fi
-
+target_stdin_from_file="${!target_stdin_var:-}"
 target_args=( "${!target_args_var}" )
-
-# Get target source directory for lcov
 target_source_var="${TARGET_NORMALIZED}_source_dir"
 target_source_dir="${!target_source_var}"
 
-# Measurement interval in seconds (modify here to change interval)
-MEASUREMENT_INTERVAL=${MEASUREMENT_INTERVAL:-900}
+# Optional per-target replay timeout override: <target>_cov_timeout in targets.conf
+target_cov_timeout_var="${TARGET_NORMALIZED}_cov_timeout"
+[ -n "${!target_cov_timeout_var:-}" ] && COV_TIMEOUT="${!target_cov_timeout_var}"
 
-echo "[INFO] Coverage measurement started for: $TARGET"
-echo "[INFO] Coverage binary: $COVERAGE_BIN"
-echo "[INFO] Input directory: $INPUT_DIR"
-echo "[INFO] Output: /coverage_out"
-echo "[INFO] Measurement interval: $((MEASUREMENT_INTERVAL / 60)) minutes ($MEASUREMENT_INTERVAL seconds)"
-if [ -n "$MAX_ITERATIONS" ]; then
-    echo "[INFO] Max iterations: $MAX_ITERATIONS (dryrun wait excluded)"
+if [ -z "${target_source_dir:-}" ]; then
+    echo "[ERROR] No source_dir for target '$TARGET' in targets.conf"
+    exit 1
 fi
-echo "[INFO] Target args: ${target_args[*]}"
-if [ -n "$target_stdin_from_file" ]; then
-    echo "[INFO] Input method: stdin from file"
+if [ -z "${!target_args_var}" ] && [ "$target_stdin_from_file" != "1" ]; then
+    echo "[ERROR] No args for target '$TARGET' and stdin_from_file not set"
+    exit 1
 fi
 
-COVERAGE_LOG="/coverage_out/coverage.log"
+cd "$OUT_DIR"
+CSV="$OUT_DIR/coverage_over_time.csv"
+LOG="$OUT_DIR/offline_coverage.log"
 
-# Wait for first archive to appear
-echo "[INFO] Waiting for first archive in $ARCHIVES_DIR..."
-while [ ! -f "$ARCHIVES_DIR/iter_0000.tar.gz" ]; do
-    sleep 3
-done
-echo "[INFO] First archive detected, starting coverage measurement loop"
-
-# Reset gcov counters to eliminate any pre-existing .gcda data baked into the image
-lcov --zerocounters --directory "$target_source_dir" -q 2>/dev/null || true
-echo "[INFO] gcov counters reset"
+echo "[INFO] Offline coverage for: $TARGET"
+echo "[INFO] Binary: $COVERAGE_BIN | source: $target_source_dir"
+echo "[INFO] interval=${MEASUREMENT_INTERVAL}s  per-input timeout=${COV_TIMEOUT}s  runs/input=${COV_RUNS}  stride=${CAPTURE_STRIDE}"
 
 run_input() {
-    local input_file="$1"
-    local tmp
+    local input_file="$1" tmp
     tmp=$(mktemp)
     cp "$input_file" "$tmp"
-
     local cmd_args=()
+    local arg
     for arg in "${target_args[@]}"; do
         [ "$arg" = "@@" ] && cmd_args+=("$tmp") || cmd_args+=("$arg")
     done
-
-    if [ -n "$target_stdin_from_file" ]; then
-        timeout 1 "$COVERAGE_BIN" "${cmd_args[@]}" < "$tmp" >/dev/null 2>&1 || true
-    else
-        timeout 1 "$COVERAGE_BIN" "${cmd_args[@]}" >/dev/null 2>&1 || true
-    fi
+    # Replay the same input COV_RUNS times so non-deterministic coverage is unioned
+    # into the accumulating .gcda (see header note).
+    local r
+    for ((r = 0; r < COV_RUNS; r++)); do
+        if [ -n "$target_stdin_from_file" ]; then
+            timeout "$COV_TIMEOUT" "$COVERAGE_BIN" "${cmd_args[@]}" < "$tmp" >/dev/null 2>&1 || true
+        else
+            timeout "$COV_TIMEOUT" "$COVERAGE_BIN" "${cmd_args[@]}" >/dev/null 2>&1 || true
+        fi
+    done
     rm -f "$tmp"
 }
 
-ITERATION=0
-recent_coverage=""
-saturation_count=0
+pct() { # covered total -> percentage string
+    if [ "${2:-0}" -gt 0 ]; then awk "BEGIN{printf \"%.1f\", $1*100/$2}"; else echo "0.0"; fi
+}
 
-while true; do
-    ARCHIVE_PATH="$ARCHIVES_DIR/$(printf 'iter_%04d.tar.gz' $ITERATION)"
+# Parse "X of Y" out of an `lcov --summary` line for the given metric keyword.
+# Echoes "covered total" (e.g. "40 1300"); "0 0" if not found.
+parse_metric() {
+    local summary="$1" key="$2"
+    echo "$summary" | grep -m1 "$key" | grep -oP '\d+ of \d+' | head -1 | awk '{print $1, $3}'
+}
 
-    # Wait for this iteration's archive
-    while [ ! -f "$ARCHIVE_PATH" ]; do
-        sleep 3
-    done
+# Reset accumulated counters once; gcov then accumulates across all replays.
+lcov --zerocounters --directory "$target_source_dir" -q 2>/dev/null || true
 
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Processing archive: $ARCHIVE_PATH"
+echo "iter,elapsed_seconds,new_inputs,cumulative_inputs,branches_covered,branches_total,branch_pct,lines_covered,lines_total,functions_covered,functions_total" > "$CSV"
+: > "$LOG"
+# Legacy 3-lines-per-snapshot log consumed by plot_coverage.py (it reads every
+# 3rd line for the branch count, so the order lines/functions/branches matters).
+LEGACY_LOG="$OUT_DIR/coverage.log"
+: > "$LEGACY_LOG"
 
-    INPUT_COUNT=0
-    if [ -s "$ARCHIVE_PATH" ]; then
-        EXTRACT_DIR=$(mktemp -d)
-        if ! tar xzf "$ARCHIVE_PATH" -C "$EXTRACT_DIR" 2>/tmp/tar_extract_err; then
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: tar extraction failed: $(cat /tmp/tar_extract_err)"
+# Enumerate snapshots in numeric order.
+shopt -s nullglob
+ARCHIVES=( "$ARCHIVES_DIR"/iter_*.tar.gz )
+shopt -u nullglob
+if [ "${#ARCHIVES[@]}" -eq 0 ]; then
+    echo "[ERROR] no iter_*.tar.gz snapshots found in $ARCHIVES_DIR"
+    exit 1
+fi
+IFS=$'\n' ARCHIVES=( $(printf '%s\n' "${ARCHIVES[@]}" | sort) ); unset IFS
+N=${#ARCHIVES[@]}
+echo "[INFO] $N snapshots to process"
+
+cumulative=0
+last_index=$((N - 1))
+idx=0
+for archive in "${ARCHIVES[@]}"; do
+    base=$(basename "$archive")
+    iter=$(echo "$base" | grep -oP '\d+' | head -1)
+    iter=$((10#$iter))
+
+    new_inputs=0
+    if [ -s "$archive" ]; then
+        extract_dir=$(mktemp -d)
+        tar xzf "$archive" -C "$extract_dir" 2>/dev/null || true
+        while IFS= read -r f; do
+            new_inputs=$((new_inputs + 1))
+            run_input "$f"
+        done < <(find "$extract_dir" -path "*/findings/queue/id:*" -type f 2>/dev/null)
+        rm -rf "$extract_dir"
+    fi
+    cumulative=$((cumulative + new_inputs))
+
+    # Capture on stride boundaries and always on the last snapshot.
+    if [ $(( iter % CAPTURE_STRIDE )) -eq 0 ] || [ "$idx" -eq "$last_index" ]; then
+        if lcov --capture --directory "$target_source_dir" --output-file coverage.info \
+                --rc lcov_branch_coverage=1 -q >/dev/null 2>&1; then
+            summary=$(lcov --summary coverage.info --rc lcov_branch_coverage=1 2>&1)
+            read -r br_cov br_tot <<< "$(parse_metric "$summary" branches)"
+            read -r ln_cov ln_tot <<< "$(parse_metric "$summary" lines)"
+            read -r fn_cov fn_tot <<< "$(parse_metric "$summary" functions)"
+            br_cov=${br_cov:-0}; br_tot=${br_tot:-0}
+            ln_cov=${ln_cov:-0}; ln_tot=${ln_tot:-0}
+            fn_cov=${fn_cov:-0}; fn_tot=${fn_tot:-0}
+            br_pct="0.0"
+            [ "$br_tot" -gt 0 ] && br_pct=$(awk "BEGIN{printf \"%.2f\", $br_cov*100/$br_tot}")
+            elapsed=$(( iter * MEASUREMENT_INTERVAL ))
+            echo "$iter,$elapsed,$new_inputs,$cumulative,$br_cov,$br_tot,$br_pct,$ln_cov,$ln_tot,$fn_cov,$fn_tot" >> "$CSV"
+            # Legacy coverage.log: 3 lines per captured snapshot for plot_coverage.py.
+            {
+                echo "  lines......: $(pct "$ln_cov" "$ln_tot")% (${ln_cov} of ${ln_tot} lines)"
+                echo "  functions..: $(pct "$fn_cov" "$fn_tot")% (${fn_cov} of ${fn_tot} functions)"
+                echo "  branches...: $(pct "$br_cov" "$br_tot")% (${br_cov} of ${br_tot} branches)"
+            } >> "$LEGACY_LOG"
+            echo "[$(date '+%F %T')] iter $iter | +$new_inputs (cum $cumulative) | branches ${br_cov}/${br_tot} (${br_pct}%) | lines ${ln_cov}/${ln_tot}" | tee -a "$LOG"
+        else
+            echo "[$(date '+%F %T')] iter $iter | lcov capture FAILED" | tee -a "$LOG"
         fi
-        EXTRACTED_QUEUE_COUNT=$(find "$EXTRACT_DIR" -path "*/findings/queue/id:*" -type f 2>/dev/null | wc -l)
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Extracted $EXTRACTED_QUEUE_COUNT queue files from archive"
-
-        while IFS= read -r input_file; do
-            INPUT_COUNT=$((INPUT_COUNT + 1))
-            run_input "$input_file"
-        done < <(find "$EXTRACT_DIR" -path "*/findings/queue/id:*" -type f 2>/dev/null)
-
-        rm -rf "$EXTRACT_DIR"
-    else
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Empty archive, skipping"
     fi
-
-    # Generate coverage report
-    if lcov --capture --directory "$target_source_dir" --output-file coverage.info \
-            --rc lcov_branch_coverage=1 >/dev/null 2>&1; then
-        if genhtml coverage.info --output-directory html \
-                --rc genhtml_branch_coverage=1 > genhtml.tmp 2>&1; then
-            branch_coverage=$(grep "branches" genhtml.tmp | grep -oP '\d+(?= of)' | head -1)
-            if [ -n "$branch_coverage" ]; then
-                if [ -z "$MIN_ITERATIONS" ] || [ "$ITERATION" -gt "$MIN_ITERATIONS" ]; then
-                    if [ "$branch_coverage" = "$recent_coverage" ]; then
-                        saturation_count=$((saturation_count + 1))
-                    else
-                        saturation_count=0
-                    fi
-                fi
-                recent_coverage="$branch_coverage"
-            fi
-            if [ -n "$MIN_ITERATIONS" ] && [ "$ITERATION" -le "$MIN_ITERATIONS" ]; then
-                echo "[$(date '+%Y-%m-%d %H:%M:%S')] Processed $INPUT_COUNT inputs | iter: $ITERATION/$MIN_ITERATIONS (min) | branch coverage: ${branch_coverage:-N/A} | saturation: (pending)"
-            else
-                echo "[$(date '+%Y-%m-%d %H:%M:%S')] Processed $INPUT_COUNT inputs | iter: $ITERATION | branch coverage: ${branch_coverage:-N/A} | saturation: $saturation_count${SATURATION_WINDOW:+/$SATURATION_WINDOW}"
-            fi
-            tail -3 genhtml.tmp | while IFS= read -r line; do
-                echo "[iter_$ITERATION] $line" >> "$COVERAGE_LOG"
-            done
-        fi
-    fi
-
-    ITERATION=$((ITERATION + 1))
-
-    # Check saturation
-    if [ -n "$SATURATION_WINDOW" ] && [ "$saturation_count" -ge "$SATURATION_WINDOW" ]; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Saturation reached ($saturation_count/$SATURATION_WINDOW). Exiting."
-        touch /coverage_out/saturation_done
-        exit 0
-    fi
-
-    # Check iteration limit
-    if [ -n "$MAX_ITERATIONS" ] && [ "$ITERATION" -gt "$MAX_ITERATIONS" ]; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Reached max iterations ($MAX_ITERATIONS). Exiting."
-        exit 0
-    fi
-
-    rm -f "$ARCHIVE_PATH"
+    idx=$((idx + 1))
 done
+
+# Persist the final tracefile and optionally a single HTML report.
+if [ -f coverage.info ]; then
+    cp coverage.info "$OUT_DIR/coverage_final.info"
+    if [ "$FINAL_HTML" = "1" ]; then
+        echo "[INFO] generating final HTML report..."
+        genhtml coverage.info --output-directory "$OUT_DIR/html" \
+            --rc genhtml_branch_coverage=1 -q 2>/dev/null || true
+    fi
+fi
+
+echo "[INFO] done -> $CSV"
+tail -1 "$CSV"
