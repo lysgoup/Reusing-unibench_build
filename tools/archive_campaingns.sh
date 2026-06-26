@@ -16,7 +16,7 @@
 # the campaign stops at the fixed duration (~INTERVAL * MAX_ITERATIONS).
 #
 # Coverage is measured AFTERWARDS, offline, from the iter_NNNN snapshots with
-#   tools/measure_coverage_offline.sh
+#   tools/measure_coverage.sh
 #
 # Usage:
 #   $0 WORKDIR INTERVAL MAX_ITERATIONS [--measure]
@@ -24,9 +24,9 @@
 #     INTERVAL:       MINUTES between queue snapshots (consistent with plot_coverage.py)
 #     MAX_ITERATIONS: number of snapshots, i.e. campaign length = INTERVAL*MAX minutes
 #     --measure:      (optional) after ALL campaigns finish archiving, run offline
-#                     coverage measurement + visualization (measure_coverage_offline.sh).
+#                     coverage measurement + visualization (measure_coverage.sh).
 #                     DEFAULT (flag absent) = archiving only; measure later, on demand:
-#                         tools/measure_coverage_offline.sh WORKDIR INTERVAL
+#                         tools/measure_coverage.sh WORKDIR INTERVAL
 #
 # Example: 5 days at 15-minute snapshots = 15 * 480 minutes -> `$0 WORKDIR 15 480`
 ##
@@ -48,7 +48,7 @@ if [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ]; then
     echo "  INTERVAL:       queue snapshot interval in MINUTES (required)"
     echo "  MAX_ITERATIONS: number of snapshots; campaign length = INTERVAL*MAX minutes (required)"
     echo "  --measure:      (optional) measure coverage + plot after all campaigns finish"
-    echo "                  (default: archive only; measure later with measure_coverage_offline.sh)"
+    echo "                  (default: archive only; measure later with measure_coverage.sh)"
     exit 1
 fi
 
@@ -200,6 +200,6 @@ done
 # timing; the developer measures the archived data later, on demand.
 if [ "$MEASURE_ON_FINISH" -eq 1 ]; then
     echo_time "Archiving done. Starting offline coverage measurement + visualization..."
-    "$UNIBENCH/tools/measure_coverage_offline.sh" "$WORKDIR" "$INTERVAL" || \
+    "$UNIBENCH/tools/measure_coverage.sh" "$WORKDIR" "$INTERVAL" || \
         echo_time "WARNING: offline measurement/visualization failed (archives are intact; retry manually)."
 fi
