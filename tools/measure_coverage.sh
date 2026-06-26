@@ -8,27 +8,54 @@
 # now-free cores and can be parallelized freely (no contention with fuzzing).
 #
 # Usage:
-#   $0 WORKDIR [INTERVAL] [PARALLEL]
-#     WORKDIR:  same work directory used during the campaign (has coverage/)
-#     INTERVAL: MINUTES per snapshot, for the time axis / plot (default 15;
-#               should match the INTERVAL passed to archive_campaigns.sh)
-#     PARALLEL: max concurrent coverage containers (default: nproc)
+#   $0 WORKDIR INTERVAL [-r COV_RUNS] [-p PARALLEL]
+#     WORKDIR  (required):  same work directory used during the campaign (has coverage/)
+#     INTERVAL (required):  MINUTES per snapshot, for the time axis / plot
+#                           (should match the INTERVAL passed to archive_campaigns.sh)
+#     -r COV_RUNS (opt):    how many times each input is replayed per snapshot to union
+#                           non-deterministic coverage (default 8; e.g. 1 = once, 10 = 10x)
+#     -p PARALLEL (opt):    max concurrent coverage containers (default: nproc)
 #
-# ENV:
+# ENV (used as fallback only when the matching option is omitted):
 #   COVERAGE_IMAGE  docker image with the gcov binaries + lcov (default unifuzz/unibench:coverage)
 #   COV_TIMEOUT     per-input replay timeout in seconds (default 5)
+#   COV_RUNS        replays per input (default 8); -r overrides this
+#   PARALLEL        max concurrent containers (default nproc); -p overrides this
 #   CAPTURE_STRIDE  capture every Nth snapshot (default 1)
 #   FINAL_HTML      1 to also emit a final genhtml report per campaign (default 0)
 ##
 
-if [ -z "$1" ]; then
-    echo "Usage: $0 WORKDIR [INTERVAL] [PARALLEL]"
-    exit 1
-fi
+usage() { echo "Usage: $0 WORKDIR INTERVAL [-r COV_RUNS] [-p PARALLEL]"; }
 
+# Required positionals: WORKDIR and INTERVAL.
+if [ $# -lt 2 ]; then
+    usage; exit 1
+fi
 WORKDIR="$(realpath "$1")"
-INTERVAL="${2:-15}"                     # MINUTES (user-facing unit, matches plot_coverage.py)
-PARALLEL="${3:-$(nproc)}"
+INTERVAL="$2"                           # MINUTES (user-facing unit, matches plot_coverage.py)
+shift 2
+
+# Optional flags: -r COV_RUNS (replays per input), -p PARALLEL (concurrent containers).
+# Precedence: flag value > matching env var > built-in default.
+COV_RUNS="${COV_RUNS:-8}"
+PARALLEL="${PARALLEL:-$(nproc)}"
+while getopts ":r:p:" opt; do
+    case "$opt" in
+        r) COV_RUNS="$OPTARG" ;;
+        p) PARALLEL="$OPTARG" ;;
+        :)  echo "[ERROR] option -$OPTARG requires a value"; usage; exit 1 ;;
+        \?) echo "[ERROR] unknown option -$OPTARG"; usage; exit 1 ;;
+    esac
+done
+
+# Validate numeric args (>= 1).
+for pair in "INTERVAL=$INTERVAL" "COV_RUNS=$COV_RUNS" "PARALLEL=$PARALLEL"; do
+    if ! [[ "${pair#*=}" =~ ^[0-9]+$ ]] || [ "${pair#*=}" -lt 1 ]; then
+        echo "[ERROR] ${pair%%=*} must be a positive integer >= 1; got: '${pair#*=}'"
+        exit 1
+    fi
+done
+
 INTERVAL_SECONDS=$(( INTERVAL * 60 ))   # CSV elapsed_seconds axis is in seconds
 
 UNIBENCH=${UNIBENCH:-"$(cd "$(dirname "${BASH_SOURCE[0]}")/../" >/dev/null 2>&1 && pwd)"}
@@ -39,7 +66,6 @@ COVERAGEDIR="$WORKDIR/coverage"
 VOLUME_PATH="$(realpath "$UNIBENCH/tools/volume")"
 COVERAGE_IMAGE="${COVERAGE_IMAGE:-unifuzz/unibench:coverage}"
 COV_TIMEOUT="${COV_TIMEOUT:-5}"
-COV_RUNS="${COV_RUNS:-8}"
 CAPTURE_STRIDE="${CAPTURE_STRIDE:-1}"
 FINAL_HTML="${FINAL_HTML:-0}"
 PLOT="${PLOT:-1}"
@@ -58,7 +84,7 @@ measure_one() {
     local campaign_dir="$COVERAGEDIR/$fuzzer/$target/$id"
     local archives_dir="$campaign_dir/archives"
 
-    if ! ls "$archives_dir"/iter_*.tar.gz >/dev/null 2>&1; then
+    if ! ls "$archives_dir"/iter_*.tar* >/dev/null 2>&1; then   # .tar (new) or .tar.gz (legacy)
         echo_time "skip (no snapshots): $fuzzer/$target/$id"
         return 0
     fi
