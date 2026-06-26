@@ -59,7 +59,7 @@ echo_ts "Queue directory found: $QUEUE_DIR"
 # Wait for dryrun_finish signal before starting archive loop.
 # Fallback: if the fuzzer never emits the signal within DRYRUN_WAIT_TIMEOUT
 # seconds (0 = wait forever), start archiving anyway so coverage is not lost.
-DRYRUN_WAIT_TIMEOUT="${DRYRUN_WAIT_TIMEOUT:-600}"
+DRYRUN_WAIT_TIMEOUT="${DRYRUN_WAIT_TIMEOUT:-0}"
 echo_ts "Waiting for dryrun_finish signal (timeout: ${DRYRUN_WAIT_TIMEOUT}s)..."
 _waited=0
 while [ ! -f "$QUEUE_DIR/signal/dryrun_finish" ]; do

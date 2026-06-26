@@ -58,14 +58,18 @@ CAPTURE_STRIDE="${CAPTURE_STRIDE:-1}"
 FINAL_HTML="${FINAL_HTML:-0}"
 
 [ -d "$ARCHIVES_DIR" ] || { echo "[ERROR] archives dir not found: $ARCHIVES_DIR"; exit 1; }
-[ -f "$COVERAGE_BIN" ] || { echo "[ERROR] coverage binary not found: $COVERAGE_BIN"; ls -la /d/p/cov/ 2>/dev/null; exit 1; }
 command -v lcov >/dev/null 2>&1 || { echo "[ERROR] lcov not found in image"; exit 1; }
+# NOTE: COVERAGE_BIN existence is checked AFTER targets.conf is sourced, because
+# some targets resolve their binary name via a conf override (see below).
 
 TARGETS_CONF="/volume/targets.conf"
 [ -f "$TARGETS_CONF" ] || { echo "[ERROR] targets.conf not found at $TARGETS_CONF"; exit 1; }
 set -a; source "$TARGETS_CONF"; set +a
 
-TARGET_NORMALIZED="${TARGET//-/_}"
+# Normalize BOTH '-' and '.' to '_' so dotted target names map to their
+# targets.conf variables (e.g. lame3.99.5 -> lame3_99_5_args). Using only
+# '${TARGET//-/_}' left the dot in place and every conf lookup silently missed.
+TARGET_NORMALIZED="${TARGET//[-.]/_}"
 target_args_var="${TARGET_NORMALIZED}_args[@]"
 target_stdin_var="${TARGET_NORMALIZED}_stdin_from_file"
 target_stdin_from_file="${!target_stdin_var:-}"
@@ -76,6 +80,15 @@ target_source_dir="${!target_source_var}"
 # Optional per-target replay timeout override: <target>_cov_timeout in targets.conf
 target_cov_timeout_var="${TARGET_NORMALIZED}_cov_timeout"
 [ -n "${!target_cov_timeout_var:-}" ] && COV_TIMEOUT="${!target_cov_timeout_var}"
+
+# Resolve the coverage binary. Default is /d/p/cov/<TARGET>, but some targets'
+# binary basename differs from the (possibly dotted) TARGET (e.g. lame3.99.5 ->
+# binary "lame"), so honor an optional targets.conf override "<norm>_cov_bin".
+target_cov_bin_var="${TARGET_NORMALIZED}_cov_bin"
+if [ ! -f "$COVERAGE_BIN" ] && [ -n "${!target_cov_bin_var:-}" ]; then
+    COVERAGE_BIN="/d/p/cov/${!target_cov_bin_var}"
+fi
+[ -f "$COVERAGE_BIN" ] || { echo "[ERROR] coverage binary not found: $COVERAGE_BIN"; ls -la /d/p/cov/ 2>/dev/null; exit 1; }
 
 if [ -z "${target_source_dir:-}" ]; then
     echo "[ERROR] No source_dir for target '$TARGET' in targets.conf"
