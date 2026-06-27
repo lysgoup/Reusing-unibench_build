@@ -1,0 +1,81 @@
+# This file contains the configuration for the run.sh script. It follows the
+# Bash syntax and is sourced by the script to access the variables. Variables
+# are mandatory unless marked with [brackets].
+
+###
+## Configuration parameters
+###
+
+# WORKDIR: path to directory where shared volumes will be created
+WORKDIR=../_test
+
+# REPEAT: number of campaigns to run per program (per fuzzer)
+REPEAT=5
+
+# [WORKER_POOL]: a space-separated list of logical cores to allocate
+WORKER_POOL="$(seq 0 190)"
+
+# FUZZERS: an array of fuzzer names (from magma/fuzzers/*) to evaluate
+FUZZERS=(angora-reusing angora)
+
+# [fuzzer_TARGETS]: an array of target names (from magma/targets/*) to fuzz with
+angora_TARGETS=(exiv2 flvmeta infotocap mp3gain mp42aac objdump pdftotext tcpdump tiffsplit)
+angora_reusing_TARGETS=(exiv2 flvmeta infotocap mp3gain mp42aac objdump pdftotext tcpdump tiffsplit)
+
+# [target_SEED]: single seed directory applied to all trials
+exiv2_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/angora/exiv2/saturated_seed
+flvmeta_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/angora/flvmeta/saturated_seed
+infotocap_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/angora/infotocap/saturated_seed
+mp3gain_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/angora/mp3gain/saturated_seed
+mp42aac_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/angora/mp42aac/saturated_seed
+objdump_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/angora/objdump/saturated_seed
+pdftotext_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/angora/pdftotext/saturated_seed
+tcpdump_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/angora/tcpdump/saturated_seed
+tiffsplit_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/angora/tiffsplit/saturated_seed
+
+
+# [target_SEEDS]: per-trial seed directories (array). SEEDS[i] is used for trial i.
+# If an element is missing for a given trial index, falls back to target_SEED.
+# SAT=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/angora
+# exiv2_SEEDS=(
+#     $SAT/exiv2/0/findings/queue
+#     $SAT/exiv2/1/findings/queue
+#     $SAT/exiv2/2/findings/queue
+#     $SAT/exiv2/3/findings/queue
+#     $SAT/exiv2/4/findings/queue
+# )
+# infotocap_SEEDS=(
+#     $SAT/infotocap/0/findings/queue
+#     $SAT/infotocap/1/findings/queue
+#     $SAT/infotocap/2/findings/queue
+#     $SAT/infotocap/3/findings/queue
+#     $SAT/infotocap/4/findings/queue
+# )
+# mp3gain_SEEDS=(
+#     $SAT/mp3gain/0/findings/queue
+#     $SAT/mp3gain/1/findings/queue
+#     $SAT/mp3gain/2/findings/queue
+#     $SAT/mp3gain/3/findings/queue
+#     $SAT/mp3gain/4/findings/queue
+# )
+# mp42aac_SEEDS=(
+#     $SAT/mp42aac/0/findings/queue
+#     $SAT/mp42aac/1/findings/queue
+#     $SAT/mp42aac/2/findings/queue
+#     $SAT/mp42aac/3/findings/queue
+#     $SAT/mp42aac/4/findings/queue
+# )
+# pdftotext_SEEDS=(
+#     $SAT/pdftotext/0/findings/queue
+#     $SAT/pdftotext/1/findings/queue
+#     $SAT/pdftotext/2/findings/queue
+#     $SAT/pdftotext/3/findings/queue
+#     $SAT/pdftotext/4/findings/queue
+# )
+# wav2swf_SEEDS=(
+#     $SAT/wav2swf/0/findings/queue
+#     $SAT/wav2swf/1/findings/queue
+#     $SAT/wav2swf/2/findings/queue
+#     $SAT/wav2swf/3/findings/queue
+#     $SAT/wav2swf/4/findings/queue
+# )
