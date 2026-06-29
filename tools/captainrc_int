@@ -1,0 +1,24 @@
+# 4-mode simultaneous benchmark on exiv2 (single angora-reusing image, run via flags).
+#   angora                 = angora_fuzzer            (fast/)
+#   angora-reusing         = angora_fuzzer --enable-reusing            (fast/)
+#   angora-storfuzz        = angora_fuzzer --enable-storfuzz           (fast_storfuzz/)
+#   angora-reusing-storfuzz= angora_fuzzer --enable-reusing --enable-storfuzz (fast_storfuzz/)
+#
+# No SEED is set -> the harness auto-uses the in-container default seed
+# (/volume/seeds/general_evaluation/jpg, per exiv2_seed_dir in targets.conf).
+
+WORKDIR=../_bench_exiv2
+
+# 1 campaign per fuzzer -> 4 campaigns total, all started simultaneously.
+REPEAT=1
+
+# >=4 logical cores so all 4 campaigns (CAMPAIGN_WORKERS=1 each) launch at once.
+WORKER_POOL="$(seq 0 7)"
+
+# Campaign duration in seconds (adjust as needed; 1800 = 30 min).
+
+# All four modes share the single angora-reusing image (built/tagged by build.sh).
+FUZZERS=(angora angora-reusing angora-storfuzz angora-reusing-storfuzz)
+
+# Global target list (applies to every fuzzer via get_var_or_default fallback).
+TARGETS=(exiv2)
