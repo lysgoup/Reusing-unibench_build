@@ -143,4 +143,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     programs, result = compute_ratios(args.data_dir)
-    plot(programs, result, log_y=args.log_y)
+    output = os.path.join(args.data_dir, "graph", "boxplot.png")
+    plot(programs, result, log_y=args.log_y, output=output)
