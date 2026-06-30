@@ -17,7 +17,7 @@ def read_branch_data(filepath):
     return data
 
 
-def compute_ratios(data_dir):
+def compute_ratios(data_dir, ratio=False):
     graph_data_dir = os.path.join(data_dir, "graph", "data")
 
     programs = sorted(
@@ -26,7 +26,7 @@ def compute_ratios(data_dir):
         if f.endswith("_angora_branch_count.txt")
     )
 
-    result = {}  # program -> list of (hours, capped)
+    result = {}  # program -> list of (value, status)
 
     for program in programs:
         angora = read_branch_data(
@@ -44,50 +44,66 @@ def compute_ratios(data_dir):
             final = a_vals[-1]
 
             if a_vals[-1] == a_vals[0]:  # angora had no coverage growth
+                if ratio:
+                    continue  # t_angora = 0, ratio undefined
                 t = next((i for i, v in enumerate(r_vals) if v > final), None)
                 if t is None:
-                    continue  # reusing also had no growth — exclude this trial
+                    entries.append((total * 15 / 60, "stagnant"))  # both had no growth
                 else:
-                    entries.append((t * 15 / 60, False))
+                    entries.append((t * 15 / 60, "reached"))
             else:
+                t_angora = next(i for i, v in enumerate(a_vals) if v >= final)
                 t = next((i for i, v in enumerate(r_vals) if v >= final), None)
                 if t is None:
-                    entries.append((total * 15 / 60, True))
+                    if ratio:
+                        entries.append((total / t_angora, "capped"))
+                    else:
+                        entries.append((total * 15 / 60, "capped"))
                 else:
-                    entries.append((t * 15 / 60, False))
+                    if ratio:
+                        entries.append((t / t_angora, "reached"))
+                    else:
+                        entries.append((t * 15 / 60, "reached"))
 
         result[program] = entries
 
     return programs, result
 
 
-def plot(programs, result, log_y=False, output="boxplot.png"):
+def plot(programs, result, log_y=False, ratio=False, output="boxplot.png"):
     fig, ax = plt.subplots(figsize=(max(8, len(programs) * 2), 6))
 
     has_capped = False
+    has_stagnant = False
     LOG_ZERO = 1 / 60  # 1 minute in hours, used as floor for log scale
 
     for i, program in enumerate(programs):
         entries = result[program]
-        normal_y = [r for r, c in entries if not c]
-        capped_y = [r for r, c in entries if c]
+        normal_y   = [r for r, c in entries if c == "reached"]
+        capped_y   = [r for r, c in entries if c == "capped"]
+        stagnant_y = [r for r, c in entries if c == "stagnant"]
 
         if log_y:
-            normal_y = [v if v > 0 else LOG_ZERO for v in normal_y]
-            capped_y = [v if v > 0 else LOG_ZERO for v in capped_y]
+            normal_y   = [v if v > 0 else LOG_ZERO for v in normal_y]
+            capped_y   = [v if v > 0 else LOG_ZERO for v in capped_y]
+            stagnant_y = [v if v > 0 else LOG_ZERO for v in stagnant_y]
 
         if normal_y:
-            x = np.random.normal(i, 0.06, len(normal_y))
+            x = np.random.normal(i, 0.09, len(normal_y))
             ax.scatter(x, normal_y, alpha=0.65, s=40, color="goldenrod", zorder=3)
         if capped_y:
-            x = np.random.normal(i, 0.06, len(capped_y))
+            x = np.random.normal(i, 0.09, len(capped_y))
             ax.scatter(x, capped_y, alpha=0.65, s=40, color="crimson", zorder=3)
             has_capped = True
+        if stagnant_y:
+            x = np.random.normal(i, 0.09, len(stagnant_y))
+            ax.scatter(x, stagnant_y, alpha=0.65, s=40, color="slategray", zorder=3)
+            has_stagnant = True
 
     if log_y:
         data = [[v if v > 0 else LOG_ZERO for v, _ in result[p]] for p in programs]
     else:
-        data = [[r for r, _ in result[p]] for p in programs]
+        data = [[v for v, _ in result[p]] for p in programs]
     ax.boxplot(
         data,
         positions=np.arange(len(programs)),
@@ -102,8 +118,13 @@ def plot(programs, result, log_y=False, output="boxplot.png"):
 
     ax.set_xticks(np.arange(len(programs)))
     ax.set_xticklabels(programs, rotation=15, ha="right")
-    ax.set_ylabel("Time to reach angora's final coverage (hours)")
-    ax.set_title("Time for angora-reusing to match angora's final coverage")
+    if ratio:
+        ax.set_ylabel("Time ratio (reusing / angora)")
+        ax.set_title("Relative time for angora-reusing to match angora's final coverage")
+        ax.axhline(y=1.0, color="black", linewidth=0.8, linestyle="--", alpha=0.5)
+    else:
+        ax.set_ylabel("Time to reach angora's final coverage (hours)")
+        ax.set_title("Time for angora-reusing to match angora's final coverage")
     all_vals = [r for p in programs for r, _ in result[p]]
     val_min, val_max = min(all_vals), max(all_vals)
     if log_y:
@@ -128,6 +149,11 @@ def plot(programs, result, log_y=False, output="boxplot.png"):
             Line2D([0], [0], marker="o", color="w", markerfacecolor="crimson",
                    markersize=8, label="never reached (capped at total)")
         )
+    if has_stagnant:
+        legend_handles.append(
+            Line2D([0], [0], marker="o", color="w", markerfacecolor="slategray",
+                   markersize=8, label="both stagnant (capped at total)")
+        )
     ax.legend(handles=legend_handles, loc="upper right", fontsize=8, markerscale=0.8,
               handlelength=1.0, borderpad=0.5, labelspacing=0.3)
 
@@ -140,8 +166,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("data_dir")
     parser.add_argument("--log-y", action="store_true", help="Use log scale on the y-axis")
+    parser.add_argument("--ratio", action="store_true",
+                        help="Show ratio of reusing time to angora time instead of absolute hours")
     args = parser.parse_args()
 
-    programs, result = compute_ratios(args.data_dir)
+    programs, result = compute_ratios(args.data_dir, ratio=args.ratio)
     output = os.path.join(args.data_dir, "graph", "boxplot.png")
-    plot(programs, result, log_y=args.log_y, output=output)
+    plot(programs, result, log_y=args.log_y, ratio=args.ratio, output=output)
