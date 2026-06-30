@@ -25,7 +25,7 @@
 #   FINAL_HTML      1 to also emit a final genhtml report per campaign (default 0)
 ##
 
-usage() { echo "Usage: $0 WORKDIR INTERVAL [-r COV_RUNS] [-p PARALLEL]"; }
+usage() { echo "Usage: $0 WORKDIR INTERVAL [-r COV_RUNS] [-p PARALLEL] [-t TARGET]"; }
 
 # Required positionals: WORKDIR and INTERVAL.
 if [ $# -lt 2 ]; then
@@ -39,10 +39,12 @@ shift 2
 # Precedence: flag value > matching env var > built-in default.
 COV_RUNS="${COV_RUNS:-8}"
 PARALLEL="${PARALLEL:-$(nproc)}"
-while getopts ":r:p:" opt; do
+FILTER_TARGET=""
+while getopts ":r:p:t:" opt; do
     case "$opt" in
         r) COV_RUNS="$OPTARG" ;;
         p) PARALLEL="$OPTARG" ;;
+        t) FILTER_TARGET="$OPTARG" ;;
         :)  echo "[ERROR] option -$OPTARG requires a value"; usage; exit 1 ;;
         \?) echo "[ERROR] unknown option -$OPTARG"; usage; exit 1 ;;
     esac
@@ -117,6 +119,7 @@ for fuzzer_dir in "$COVERAGEDIR"/*; do
     for target_dir in "$fuzzer_dir"/*; do
         [ -d "$target_dir" ] || continue
         target=$(basename "$target_dir")
+        [ -n "$FILTER_TARGET" ] && [ "$target" != "$FILTER_TARGET" ] && continue
         for id_dir in "$target_dir"/*; do
             [ -d "$id_dir" ] || continue
             id=$(basename "$id_dir")
