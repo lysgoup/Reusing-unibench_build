@@ -94,7 +94,7 @@ if [ -z "${target_source_dir:-}" ]; then
     echo "[ERROR] No source_dir for target '$TARGET' in targets.conf"
     exit 1
 fi
-if [ -z "${!target_args_var}" ] && [ "$target_stdin_from_file" != "1" ]; then
+if [ "${#target_args[@]}" -eq 0 ] && [ "$target_stdin_from_file" != "1" ]; then
     echo "[ERROR] No args for target '$TARGET' and stdin_from_file not set"
     exit 1
 fi
