@@ -85,15 +85,20 @@ while true; do
     # Collect only files not seen in previous iterations
     NEW_FILES=()
     if [ -n "$CURRENT_QUEUE_DIR" ]; then
-        QUEUE_FILE_COUNT=$(find "$CURRENT_QUEUE_DIR" -maxdepth 1 -name 'id:*' -type f 2>/dev/null | wc -l)
+        # Single find (not two) + bash-builtin basename. The previous code forked
+        # `basename` once per queue file EVERY iteration; on a 193k-file queue that
+        # alone cost ~25min/iter (the misnamed "compression took" time). Using
+        # ${f##*/} keeps the scan in-process and bounded by file count only.
+        mapfile -t _ALL_FILES < <(find "$CURRENT_QUEUE_DIR" -maxdepth 1 -name 'id:*' -type f 2>/dev/null | sort)
+        QUEUE_FILE_COUNT=${#_ALL_FILES[@]}
         echo_ts "iter $ITERATION: queue has $QUEUE_FILE_COUNT files in $CURRENT_QUEUE_DIR"
-        while IFS= read -r f; do
-            fname=$(basename "$f")
+        for f in "${_ALL_FILES[@]}"; do
+            fname="${f##*/}"
             if [ -z "${SEEN_FILES[$fname]+x}" ]; then
                 NEW_FILES+=("$f")
                 SEEN_FILES[$fname]=1
             fi
-        done < <(find "$CURRENT_QUEUE_DIR" -maxdepth 1 -name 'id:*' -type f 2>/dev/null | sort)
+        done
     else
         QUEUE_FILE_COUNT=0
         echo_ts "iter $ITERATION: queue dir not found"
@@ -111,12 +116,13 @@ while true; do
         done
         echo_ts "iter $ITERATION: archiving $NEW_FILE_COUNT new files..."
         tar czf "$ARCHIVE_TMP" -C "$TEMP_DIR" "$RELATIVE_QUEUE" 2>/dev/null
+        TAR_EXIT=$?   # capture BEFORE rm, else $? is rm's status and a broken tar looks OK
         rm -rf "$TEMP_DIR"
     else
         echo_ts "iter $ITERATION: no new files, creating empty archive"
         tar czf "$ARCHIVE_TMP" -T /dev/null 2>/dev/null
+        TAR_EXIT=$?
     fi
-    TAR_EXIT=$?
     if [ "$TAR_EXIT" -eq 0 ] || [ "$TAR_EXIT" -eq 1 ]; then
         mv "$ARCHIVE_TMP" "$ARCHIVE_PATH"
         # NEW_FILE_COUNT already holds the exact number of archived files, so there
@@ -142,6 +148,6 @@ while true; do
         echo_ts "iter $ITERATION: waiting ${SLEEP_TIME}s..."
         sleep "$SLEEP_TIME"
     else
-        echo_ts "iter $ITERATION: compression took ${ELAPSED}s, skipping sleep"
+        echo_ts "iter $ITERATION: scan+archive took ${ELAPSED}s (>= interval ${INTERVAL}s), skipping sleep"
     fi
 done
