@@ -1,4 +1,4 @@
-FROM unifuzz/unibench:angora-reusing-base
+FROM unifuzz/unibench:angora-reusing-target
 
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \

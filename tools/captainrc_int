@@ -1,0 +1,19 @@
+
+
+WORKDIR=../_storfuzz_int_test
+
+# 1 campaign per fuzzer -> 4 campaigns total, all started simultaneously.
+REPEAT=5
+
+# >=4 logical cores so all 4 campaigns (CAMPAIGN_WORKERS=1 each) launch at once.
+WORKER_POOL="$(seq 0 9)"
+
+# Campaign duration in seconds (adjust as needed; 1800 = 30 min).
+
+# All four modes share the single angora-reusing image (built/tagged by build.sh).
+FUZZERS=(angora angora-storfuzz)
+
+# Global target list (applies to every fuzzer via get_var_or_default fallback).
+TARGETS=(exiv2)
+
+exiv2_SEED=/home/kmg/UNIST/queue

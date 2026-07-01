@@ -80,5 +80,5 @@ fi
 
 # Run angora_fuzzer
 /angora/angora_fuzzer -i "$SEED" -o "$OUTPUT_DIR" \
-    -t "$TRACK_BIN" --enable-storfuzz $queue_file_flag $FUZZARGS -- "$FAST_BIN" "${ARGS[@]}" 2>&1
+    -t "$TRACK_BIN" --enable-reusing --enable-storfuzz $queue_file_flag $FUZZARGS -- "$FAST_BIN" "${ARGS[@]}" 2>&1
 
