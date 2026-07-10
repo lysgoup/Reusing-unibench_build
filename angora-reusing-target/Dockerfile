@@ -45,6 +45,18 @@ RUN cd /unibench/exiv2-0.26 && export ANGORA_PASS_LOG_DIR=$(pwd) && cmake -DEXIV
 #     cp gdk-pixbuf/gdk-pixbuf-pixdata /d/p/angora/taint/ &&\
 #     make clean
 
+RUN cd /unibench/gdk-pixbuf-2.31.1 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
+    ./autogen.sh --enable-static=yes --enable-shared=no --with-included-loaders=yes && make -j &&\
+    cp gdk-pixbuf/gdk-pixbuf-pixdata /d/p/angora/fast/ &&\
+    make clean &&\
+    for L in libpng16 libtiff libjpeg; do \
+      F=$(ls /usr/lib/x86_64-linux-gnu/${L}.a /usr/lib/x86_64-linux-gnu/${L}.so /usr/lib/x86_64-linux-gnu/${L}.so.* 2>/dev/null | head -1); \
+      [ -n "$F" ] && /angora/tools/gen_library_abilist.sh "$F" discard >> /tmp/abilist.txt; \
+    done &&\
+    USE_TRACK=1 make -j &&\
+    cp gdk-pixbuf/gdk-pixbuf-pixdata /d/p/angora/taint/ &&\
+    make clean
+
 RUN cd /unibench/jhead-3.00 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     make -j &&\
     cp jhead /d/p/angora/fast/ &&\
