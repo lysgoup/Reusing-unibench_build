@@ -164,7 +164,7 @@ for archive in "${ARCHIVES[@]}"; do
         while IFS= read -r f; do
             new_inputs=$((new_inputs + 1))
             run_input "$f"
-        done < <(find "$extract_dir" -path "*/findings/queue/id:*" -type f 2>/dev/null)
+        done < <(find "$extract_dir" -path "*/queue/id:*" -type f 2>/dev/null)
         rm -rf "$extract_dir"
     fi
     cumulative=$((cumulative + new_inputs))

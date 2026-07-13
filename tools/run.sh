@@ -45,6 +45,7 @@ fi
 WORKDIR="$(realpath "$WORKDIR")"
 export ARDIR="$WORKDIR/ar"
 export CACHEDIR="$WORKDIR/cache"
+export COVERAGEDIR="$WORKDIR/coverage"   # must match archive_campaigns.sh
 export LOGDIR="$WORKDIR/log"
 export POCDIR="$WORKDIR/poc"
 export LOCKDIR="$WORKDIR/lock"
@@ -112,6 +113,40 @@ start_campaign()
     {
         export SHARED="$CAMPAIGN_CACHEDIR/$CACHECID"
         mkdir -p "$SHARED" && chmod 777 "$SHARED"
+
+        # Saturation-seed base: install THIS campaign's seed corpus as its
+        # iter_0000 baseline, so archive_queue skips the ~100k dry-run queue and
+        # archives only post-start deltas. Keyed by SEED (not target), so a
+        # per-trial ${TARGET}_SEEDS=(seed0 seed1 ...) array yields a distinct
+        # base per trial, while a shared ${TARGET}_SEED is tarred once and
+        # hardlinked to every campaign. We are inside launch_campaign, so $SEED
+        # and $CACHECID are the ACTUAL pair for this campaign (no trial<->cacheid
+        # guessing). flock serializes building the same base once.
+        if [ "${SATURATION_MODE:-0}" = 1 ] && [ -n "$SEED" ] && [ -d "$SEED" ]; then
+            seed_real="$(realpath "$SEED" 2>/dev/null)"; [ -n "$seed_real" ] || seed_real="$SEED"
+            seed_key=$(printf '%s' "$seed_real" | sha1sum | cut -c1-16)
+            base_cache="$COVERAGEDIR/_base/$seed_key/iter_0000.tar.gz"
+            (
+                flock 201
+                [ -f "$base_cache" ] || \
+                    "$UNIBENCH/tools/make_base_archive.sh" "$SEED" "$base_cache" \
+                        >> "${LOGDIR}/make_base_${seed_key}.log" 2>&1
+            ) 201>"$LOCKDIR/base_${seed_key}.lock" || true   # a base hiccup must never abort the campaign (set -e)
+            camp_arch="$COVERAGEDIR/$FUZZER/$TARGET/$CACHECID/archives"
+            mkdir -p "$camp_arch"
+            # Tell archive_queue to skip the dry-run queue even if the base build
+            # failed, so a failure never degrades iter_0000 into a full-queue dump
+            # (which would inflate this trial's baseline vs its siblings).
+            : > "$camp_arch/.skip_preloaded"
+            if [ -f "$base_cache" ] && \
+               { ln -f "$base_cache" "$camp_arch/iter_0000.tar.gz" 2>/dev/null || \
+                 cp -f "$base_cache" "$camp_arch/iter_0000.tar.gz"; } && \
+               [ -f "$camp_arch/iter_0000.tar.gz" ]; then
+                echo_time "Saturation base installed: $FUZZER/$TARGET/$CACHECID/iter_0000 (seed_key=$seed_key)"
+            else
+                echo_time "ERROR: saturation base MISSING for $FUZZER/$TARGET/$CACHECID (seed=$SEED, seed_key=$seed_key); iter_0000 baseline absent (see make_base_${seed_key}.log)"
+            fi
+        fi
 
         echo_time "Container unifuzz/unibench:$FUZZER/$TARGET/$ARCID started on CPU $AFFINITY"
         "$UNIBENCH"/tools/start.sh &> \
