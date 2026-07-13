@@ -241,7 +241,7 @@ for FUZZER in "${BUILT_FUZZER[@]}"; do
     TARGETS=($(get_var_or_default $FUZZER 'TARGETS'))
     for TARGET in "${TARGETS[@]}"; do
         export TARGET
-        export FUZZARGS="$(get_var_or_default "$FUZZER" "$TARGET" 'FUZZARGS')"
+        export FUZZARGS="$(get_var_or_default "$FUZZER" "$TARGET" 'FUZZARGS') ${GLOBAL_FUZZARGS:-}"
         export QUEUE_FILE="$(get_var_or_default "$TARGET" 'QUEUE_FILE')"
         DEFAULT_SEED="$(get_var_or_default "$TARGET" 'SEED')"
         echo_time "Starting campaigns for $TARGET $ARGS"
