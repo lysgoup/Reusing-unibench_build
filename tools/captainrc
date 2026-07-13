@@ -7,69 +7,88 @@
 ###
 
 # WORKDIR: path to directory where shared volumes will be created
-WORKDIR=../_test
+WORKDIR=/data2/projects/reusing/server1-exp/AR_1T_1D_S_7f3ec91
 
 # REPEAT: number of campaigns to run per program (per fuzzer)
-REPEAT=5
+REPEAT=10
 
 # [WORKER_POOL]: a space-separated list of logical cores to allocate
-WORKER_POOL="$(seq 0 190)"
+WORKER_POOL="$(seq 0 49)"
 
 # FUZZERS: an array of fuzzer names (from magma/fuzzers/*) to evaluate
 FUZZERS=(angora angora-reusing)
 
 # [fuzzer_TARGETS]: an array of target names (from magma/targets/*) to fuzz with
-angora_TARGETS=(exiv2 infotocap mp3gain mp42aac pdftotext wav2swf)
-angora_reusing_TARGETS=(exiv2 infotocap mp3gain mp42aac pdftotext wav2swf)
+angora_TARGETS=(exiv2 gdk-pixbuf-pixdata sqlite3 cflow jq)
+angora_reusing_TARGETS=(exiv2 gdk-pixbuf-pixdata sqlite3 cflow jq)
 
 # [target_SEED]: single seed directory applied to all trials
-exiv2_SEED=/home/projects/reusing/_saturated_seed/exiv2
-mp3gain_SEED=/home/projects/reusing/_saturated_seed/mp3gain
-ffmpeg_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturated_seed/ffmpeg
-tiffsplit_SEED=/home/projects/reusing/_saturated_seed/tiffsplit
 
 # [target_SEEDS]: per-trial seed directories (array). SEEDS[i] is used for trial i.
 # If an element is missing for a given trial index, falls back to target_SEED.
-SAT=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/angora
+SAT=/data2/projects/reusing/_saturation/ar/angora
+
 exiv2_SEEDS=(
     $SAT/exiv2/0/findings/queue
     $SAT/exiv2/1/findings/queue
     $SAT/exiv2/2/findings/queue
     $SAT/exiv2/3/findings/queue
     $SAT/exiv2/4/findings/queue
+    $SAT/exiv2/5/findings/queue
+    $SAT/exiv2/6/findings/queue
+    $SAT/exiv2/7/findings/queue
+    $SAT/exiv2/8/findings/queue
+    $SAT/exiv2/9/findings/queue
 )
-infotocap_SEEDS=(
-    $SAT/infotocap/0/findings/queue
-    $SAT/infotocap/1/findings/queue
-    $SAT/infotocap/2/findings/queue
-    $SAT/infotocap/3/findings/queue
-    $SAT/infotocap/4/findings/queue
+
+gdk_pixbuf_pixdata_SEEDS=(
+    $SAT/gdk_pixbuf_pixdata/0/findings/queue
+    $SAT/gdk_pixbuf_pixdata/1/findings/queue
+    $SAT/gdk_pixbuf_pixdata/2/findings/queue
+    $SAT/gdk_pixbuf_pixdata/3/findings/queue
+    $SAT/gdk_pixbuf_pixdata/4/findings/queue
+    $SAT/gdk_pixbuf_pixdata/5/findings/queue
+    $SAT/gdk_pixbuf_pixdata/6/findings/queue
+    $SAT/gdk_pixbuf_pixdata/7/findings/queue
+    $SAT/gdk_pixbuf_pixdata/8/findings/queue
+    $SAT/gdk_pixbuf_pixdata/9/findings/queue
 )
-mp3gain_SEEDS=(
-    $SAT/mp3gain/0/findings/queue
-    $SAT/mp3gain/1/findings/queue
-    $SAT/mp3gain/2/findings/queue
-    $SAT/mp3gain/3/findings/queue
-    $SAT/mp3gain/4/findings/queue
+
+sqlite3_SEEDS=(
+    $SAT/sqlite3/0/findings/queue
+    $SAT/sqlite3/1/findings/queue
+    $SAT/sqlite3/2/findings/queue
+    $SAT/sqlite3/3/findings/queue
+    $SAT/sqlite3/4/findings/queue
+    $SAT/sqlite3/5/findings/queue
+    $SAT/sqlite3/6/findings/queue
+    $SAT/sqlite3/7/findings/queue
+    $SAT/sqlite3/8/findings/queue
+    $SAT/sqlite3/9/findings/queue
 )
-mp42aac_SEEDS=(
-    $SAT/mp42aac/0/findings/queue
-    $SAT/mp42aac/1/findings/queue
-    $SAT/mp42aac/2/findings/queue
-    $SAT/mp42aac/3/findings/queue
-    $SAT/mp42aac/4/findings/queue
+
+cflow_SEEDS=(
+    $SAT/cflow/0/findings/queue
+    $SAT/cflow/1/findings/queue
+    $SAT/cflow/2/findings/queue
+    $SAT/cflow/3/findings/queue
+    $SAT/cflow/4/findings/queue
+    $SAT/cflow/5/findings/queue
+    $SAT/cflow/6/findings/queue
+    $SAT/cflow/7/findings/queue
+    $SAT/cflow/8/findings/queue
+    $SAT/cflow/9/findings/queue
 )
-pdftotext_SEEDS=(
-    $SAT/pdftotext/0/findings/queue
-    $SAT/pdftotext/1/findings/queue
-    $SAT/pdftotext/2/findings/queue
-    $SAT/pdftotext/3/findings/queue
-    $SAT/pdftotext/4/findings/queue
-)
-wav2swf_SEEDS=(
-    $SAT/wav2swf/0/findings/queue
-    $SAT/wav2swf/1/findings/queue
-    $SAT/wav2swf/2/findings/queue
-    $SAT/wav2swf/3/findings/queue
-    $SAT/wav2swf/4/findings/queue
+
+jq_SEEDS=(
+    $SAT/jq/0/findings/queue
+    $SAT/jq/1/findings/queue
+    $SAT/jq/2/findings/queue
+    $SAT/jq/3/findings/queue
+    $SAT/jq/4/findings/queue
+    $SAT/jq/5/findings/queue
+    $SAT/jq/6/findings/queue
+    $SAT/jq/7/findings/queue
+    $SAT/jq/8/findings/queue
+    $SAT/jq/9/findings/queue
 )

@@ -110,6 +110,9 @@ start_archiver() {
     fi
     mkdir -p "$archive_dir"
 
+    # NOTE: for saturation-seed runs, run.sh's launch_campaign pre-installs the
+    # per-SEED base as iter_0000.tar.gz in this archive_dir; archive_queue then
+    # resumes at iter_0001 and archives only deltas. Nothing to pass here.
     "${NICE_PREFIX[@]}" "$UNIBENCH/tools/archive_queue.sh" \
         "$cache_dir" "$archive_dir" "$INTERVAL_SECONDS" "$MAX_ITERATIONS" \
         &>> "${LOGDIR}/archive_${key}.log" &
@@ -170,6 +173,10 @@ while true; do
                         if [ ! -f "$COVERAGEDIR/$FUZZER/$TARGET/$CACHECID/archives/archive_done" ]; then
                             all_done=0
                         fi
+                    else
+                        # Present but still-empty campaign dir (just created, not yet
+                        # populated): block self-termination so it isn't orphaned.
+                        all_done=0
                     fi
                 done
             done
