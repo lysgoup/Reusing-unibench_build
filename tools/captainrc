@@ -7,38 +7,53 @@
 ###
 
 # WORKDIR: path to directory where shared volumes will be created
-WORKDIR=/data2/projects/reusing/server1-exp/AR_1T_1D_S_7f3ec91
+WORKDIR=/data2/projects/reusing/server1-exp/target_analysis
 
 # REPEAT: number of campaigns to run per program (per fuzzer)
 REPEAT=10
 
 # [WORKER_POOL]: a space-separated list of logical cores to allocate
-WORKER_POOL="$(seq 0 49)"
+WORKER_POOL="$(seq 0 59)"
+
+GLOBAL_FUZZARGS="--analysis-mode"
 
 # FUZZERS: an array of fuzzer names (from magma/fuzzers/*) to evaluate
 FUZZERS=(angora angora-reusing)
 
 # [fuzzer_TARGETS]: an array of target names (from magma/targets/*) to fuzz with
-angora_TARGETS=(exiv2 gdk-pixbuf-pixdata sqlite3 cflow jq)
-angora_reusing_TARGETS=(exiv2 gdk-pixbuf-pixdata sqlite3 cflow jq)
+angora_TARGETS=(gdk-pixbuf-pixdata imginfo mp3gain)
+angora_reusing_TARGETS=(gdk-pixbuf-pixdata imginfo mp3gain)
 
 # [target_SEED]: single seed directory applied to all trials
-
+SATURATION_MODE=1
 # [target_SEEDS]: per-trial seed directories (array). SEEDS[i] is used for trial i.
 # If an element is missing for a given trial index, falls back to target_SEED.
 SAT=/data2/projects/reusing/_saturation/ar/angora
 
-exiv2_SEEDS=(
-    $SAT/exiv2/0/findings/queue
-    $SAT/exiv2/1/findings/queue
-    $SAT/exiv2/2/findings/queue
-    $SAT/exiv2/3/findings/queue
-    $SAT/exiv2/4/findings/queue
-    $SAT/exiv2/5/findings/queue
-    $SAT/exiv2/6/findings/queue
-    $SAT/exiv2/7/findings/queue
-    $SAT/exiv2/8/findings/queue
-    $SAT/exiv2/9/findings/queue
+imginfo_SEEDS=(
+    $SAT/imginfo/0/findings/queue
+    $SAT/imginfo/1/findings/queue
+    $SAT/imginfo/2/findings/queue
+    $SAT/imginfo/3/findings/queue
+    $SAT/imginfo/4/findings/queue
+    $SAT/imginfo/5/findings/queue
+    $SAT/imginfo/6/findings/queue
+    $SAT/imginfo/7/findings/queue
+    $SAT/imginfo/8/findings/queue
+    $SAT/imginfo/9/findings/queue
+)
+
+mp3gain_SEEDS=(
+    $SAT/mp3gain/0/findings/queue
+    $SAT/mp3gain/1/findings/queue
+    $SAT/mp3gain/2/findings/queue
+    $SAT/mp3gain/3/findings/queue
+    $SAT/mp3gain/4/findings/queue
+    $SAT/mp3gain/5/findings/queue
+    $SAT/mp3gain/6/findings/queue
+    $SAT/mp3gain/7/findings/queue
+    $SAT/mp3gain/8/findings/queue
+    $SAT/mp3gain/9/findings/queue
 )
 
 gdk_pixbuf_pixdata_SEEDS=(
@@ -52,43 +67,4 @@ gdk_pixbuf_pixdata_SEEDS=(
     $SAT/gdk_pixbuf_pixdata/7/findings/queue
     $SAT/gdk_pixbuf_pixdata/8/findings/queue
     $SAT/gdk_pixbuf_pixdata/9/findings/queue
-)
-
-sqlite3_SEEDS=(
-    $SAT/sqlite3/0/findings/queue
-    $SAT/sqlite3/1/findings/queue
-    $SAT/sqlite3/2/findings/queue
-    $SAT/sqlite3/3/findings/queue
-    $SAT/sqlite3/4/findings/queue
-    $SAT/sqlite3/5/findings/queue
-    $SAT/sqlite3/6/findings/queue
-    $SAT/sqlite3/7/findings/queue
-    $SAT/sqlite3/8/findings/queue
-    $SAT/sqlite3/9/findings/queue
-)
-
-cflow_SEEDS=(
-    $SAT/cflow/0/findings/queue
-    $SAT/cflow/1/findings/queue
-    $SAT/cflow/2/findings/queue
-    $SAT/cflow/3/findings/queue
-    $SAT/cflow/4/findings/queue
-    $SAT/cflow/5/findings/queue
-    $SAT/cflow/6/findings/queue
-    $SAT/cflow/7/findings/queue
-    $SAT/cflow/8/findings/queue
-    $SAT/cflow/9/findings/queue
-)
-
-jq_SEEDS=(
-    $SAT/jq/0/findings/queue
-    $SAT/jq/1/findings/queue
-    $SAT/jq/2/findings/queue
-    $SAT/jq/3/findings/queue
-    $SAT/jq/4/findings/queue
-    $SAT/jq/5/findings/queue
-    $SAT/jq/6/findings/queue
-    $SAT/jq/7/findings/queue
-    $SAT/jq/8/findings/queue
-    $SAT/jq/9/findings/queue
 )

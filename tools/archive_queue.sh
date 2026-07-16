@@ -53,6 +53,8 @@ fi
 MANIFEST="$ARCHIVE_DIR/.archived_names"     # persistent set of accounted basenames
 MIN_SLEEP="${MIN_SLEEP:-60}"                 # floor so the archiver never starves the fuzzer/disk
 DRYRUN_WAIT_TIMEOUT="${DRYRUN_WAIT_TIMEOUT:-0}"   # 0 = wait forever for dryrun_finish
+ARCHIVE_MODE="${ARCHIVE_MODE:-tar}"          # 'tar' (self-contained iter_NNNN.tar.gz) | 'log' (record filenames; seeds via corpus.tar.gz)
+QUEUE_LOG="$ARCHIVE_DIR/queue.log"           # log mode: <iter>\t<epoch>\t<relpath> per new queue file
 
 find_queue_dir() {
     if [ -d "$CACHE_DIR/findings/queue" ]; then
@@ -173,24 +175,40 @@ while true; do
     NEW_FILE_COUNT=${#NEW_FILES[@]}
     echo_ts "iter $ITERATION: $NEW_FILE_COUNT new files to archive"
 
+  if [ "$ARCHIVE_MODE" = log ]; then
+    # LOG mode: RECORD the new files' relative paths only; the seed bytes stay in
+    # the queue (persisted to ar/ at campaign end, and captured once into
+    # corpus.tar.gz at MAX_ITER). No per-iter tar/cp -> near-zero overhead and
+    # none of the archiving failure modes. Self-heal (full scan + SEEN) and
+    # restart-safety (MANIFEST) unchanged. Compatible with any fuzzer the pipeline
+    # already handles (findings[/default]/queue/id:* -- same assumption as tar).
+    RELATIVE_QUEUE="${CURRENT_QUEUE_DIR:+${CURRENT_QUEUE_DIR#$CACHE_DIR/}}"
+    _epoch=$(date +%s)
+    if [ "$NEW_FILE_COUNT" -gt 0 ]; then
+        for nm in "${NEW_NAMES[@]}"; do
+            printf '%s\t%s\t%s/%s\n' "$ITERATION" "$_epoch" "$RELATIVE_QUEUE" "$nm" >> "$QUEUE_LOG"
+            printf '%s\n' "$nm" >> "$MANIFEST"; SEEN[$nm]=1
+        done
+    else
+        printf '%s\t%s\t-\n' "$ITERATION" "$_epoch" >> "$QUEUE_LOG"   # empty-iter time marker
+    fi
+    echo_ts "iter $ITERATION: logged $NEW_FILE_COUNT new files (log mode, total accounted ${#SEEN[@]})"
+  else
     ARCHIVE_TMP=$(mktemp "${ARCHIVE_PATH}.XXXXXX")
-    COPIED_NAMES=()
     if [ "$NEW_FILE_COUNT" -gt 0 ]; then
         RELATIVE_QUEUE="${CURRENT_QUEUE_DIR#$CACHE_DIR/}"
-        TEMP_DIR=$(mktemp -d)
-        mkdir -p "$TEMP_DIR/$RELATIVE_QUEUE"
-        for i in "${!NEW_FILES[@]}"; do
-            # Account a file ONLY if it was actually copied into the archive. A
-            # file that failed cp (vanished/unreadable) stays UNaccounted so the
-            # next full scan re-archives it (self-healing; never a silent loss).
-            if cp "${NEW_FILES[$i]}" "$TEMP_DIR/$RELATIVE_QUEUE/" 2>/dev/null; then
-                COPIED_NAMES+=("${NEW_NAMES[$i]}")
-            fi
-        done
-        echo_ts "iter $ITERATION: archiving ${#COPIED_NAMES[@]}/$NEW_FILE_COUNT new files..."
-        tar czf "$ARCHIVE_TMP" -C "$TEMP_DIR" "$RELATIVE_QUEUE" 2>/dev/null
+        # tar DIRECTLY from the live cache via a relative-path file list -- NO
+        # cp-to-temp staging. Staging duplicated every new file UNCOMPRESSED into
+        # $TMPDIR and, on a 40k+-file (multi-GB) queue, filled /tmp so most cp's
+        # failed (ENOSPC) -> most files unarchived. The compressed archive goes
+        # straight to ARCHIVE_DIR (small; on the big coverage fs). --ignore-failed-read
+        # tolerates a file that vanishes mid-tar (skipped, exit 1).
+        LIST=$(mktemp)
+        printf '%s\n' "${NEW_NAMES[@]/#/$RELATIVE_QUEUE/}" > "$LIST"
+        echo_ts "iter $ITERATION: archiving $NEW_FILE_COUNT new files (tar-direct)..."
+        tar czf "$ARCHIVE_TMP" -C "$CACHE_DIR" --ignore-failed-read -T "$LIST" 2>/dev/null
         TAR_EXIT=$?
-        rm -rf "$TEMP_DIR"
+        rm -f "$LIST"
     else
         tar czf "$ARCHIVE_TMP" -T /dev/null 2>/dev/null
         TAR_EXIT=$?
@@ -198,23 +216,42 @@ while true; do
 
     if [ "$TAR_EXIT" -eq 0 ] || [ "$TAR_EXIT" -eq 1 ]; then
         mv -f "$ARCHIVE_TMP" "$ARCHIVE_PATH"
-        # DURABLE-THEN-RECORD: only after the archive is committed, and only for
-        # files actually copied into it, do we mark accounted (SEEN + manifest).
-        # A crash before this, or a cp failure, leaves files unaccounted ->
-        # re-archived next scan (dup, which coverage-union tolerates) not lost.
-        if [ "${#COPIED_NAMES[@]}" -gt 0 ]; then
-            printf '%s\n' "${COPIED_NAMES[@]}" >> "$MANIFEST"
-            for nm in "${COPIED_NAMES[@]}"; do SEEN[$nm]=1; done
+        # DURABLE-THEN-RECORD, ground-truth accounting: mark accounted ONLY the
+        # basenames actually present in the committed archive (read back via
+        # `tar tzf`), so a file that failed to archive (vanished, or a partial
+        # tar) stays UNaccounted and self-heals on the next full scan. A crash
+        # before this leaves everything unaccounted -> re-archived (dup, which
+        # coverage-union tolerates) never lost.
+        _acc=0
+        if [ "$NEW_FILE_COUNT" -gt 0 ]; then
+            while IFS= read -r nm; do
+                [ -n "$nm" ] || continue
+                printf '%s\n' "$nm" >> "$MANIFEST"; SEEN[$nm]=1; _acc=$((_acc+1))
+            done < <(tar tzf "$ARCHIVE_PATH" 2>/dev/null | sed -n 's#.*/\(id:[^/]*\)$#\1#p')
         fi
-        echo_ts "iter $ITERATION: done -> $ARCHIVE_PATH (${#COPIED_NAMES[@]} new files, total accounted ${#SEEN[@]})"
+        echo_ts "iter $ITERATION: done -> $ARCHIVE_PATH ($_acc/$NEW_FILE_COUNT archived, total accounted ${#SEEN[@]})"
     else
         rm -f "$ARCHIVE_TMP"
         echo_ts "iter $ITERATION: tar FAILED (exit $TAR_EXIT); files stay unaccounted, retried next iter"
     fi
+  fi
 
     ITERATION=$((ITERATION + 1))
     if [ -n "$MAX_ITERATIONS" ] && [ "$ITERATION" -gt "$MAX_ITERATIONS" ]; then
         echo_ts "Max iterations ($MAX_ITERATIONS) reached, stopping"
+        # By DEFAULT log mode stores no seed bytes -- the queue persists at
+        # ar/$FUZZER/$TARGET/$ARCID/findings/queue (run.sh's mv) and coverage reads
+        # it from there (mounted as /campaign). corpus.tar.gz is redundant then.
+        # Set LOG_CORPUS=1 only if you delete/relocate ar/ and want a portable,
+        # self-contained snapshot next to the log.
+        if [ "$ARCHIVE_MODE" = log ] && [ "${LOG_CORPUS:-0}" = 1 ] && [ ! -f "$ARCHIVE_DIR/corpus.tar.gz" ]; then
+            _q=$(find_queue_dir)
+            if [ -n "$_q" ] && bash "$(dirname "$0")/make_base_archive.sh" "$_q" "$ARCHIVE_DIR/corpus.tar.gz" >> "$ARCHIVE_DIR/.corpus.log" 2>&1; then
+                echo_ts "corpus.tar.gz written (LOG_CORPUS=1 self-contained snapshot)"
+            else
+                echo_ts "WARNING: log-mode corpus.tar.gz failed; ensure the queue persists for coverage"
+            fi
+        fi
         touch "$ARCHIVE_DIR/archive_done"
         echo_ts "archive_done signal written"
         break

@@ -137,35 +137,95 @@ echo "iter,elapsed_seconds,new_inputs,cumulative_inputs,branches_covered,branche
 LEGACY_LOG="$OUT_DIR/coverage.log"
 : > "$LEGACY_LOG"
 
-# Enumerate snapshots in numeric order.
-shopt -s nullglob
-ARCHIVES=( "$ARCHIVES_DIR"/iter_*.tar.gz )
-shopt -u nullglob
-if [ "${#ARCHIVES[@]}" -eq 0 ]; then
-    echo "[ERROR] no iter_*.tar.gz snapshots found in $ARCHIVES_DIR"
-    exit 1
+# Enumerate iterations. Two archive formats are auto-detected:
+#   - LOG mode:  queue.log ("<iter>\t<epoch>\t<relpath>" per new file) + one
+#                corpus.tar.gz with the seed bytes. Extract the corpus ONCE and
+#                replay each iter's logged files. (archive_queue ARCHIVE_MODE=log)
+#   - TAR mode:  iter_NNNN.tar.gz self-contained snapshots (extract each).
+QLOG="$ARCHIVES_DIR/queue.log"
+LOG_MODE=0
+if [ -f "$QLOG" ]; then
+    LOG_MODE=1
+    # Resolve the seed bytes for the log's relative paths (findings/queue/id:*):
+    #   prefer the persisted campaign queue mounted at /campaign (no copy, no
+    #   redundancy -- the seeds already live in ar/.../findings/queue); otherwise
+    #   fall back to a self-contained corpus.tar.gz next to the log (LOG_CORPUS=1).
+    if [ -d /campaign ] && [ -d /campaign/findings ]; then
+        CORPUS_ROOT=/campaign
+        echo "[INFO] log mode: seeds from mounted campaign queue /campaign"
+    elif [ -f "$ARCHIVES_DIR/corpus.tar.gz" ]; then
+        CORPUS_ROOT=$(mktemp -d)
+        tar xzf "$ARCHIVES_DIR/corpus.tar.gz" -C "$CORPUS_ROOT" 2>/dev/null || true
+        echo "[INFO] log mode: seeds from corpus.tar.gz"
+    else
+        echo "[ERROR] log mode but neither /campaign (ar queue) nor corpus.tar.gz is available"
+        exit 1
+    fi
+    # Iterations = union of the log's iters AND any iter_*.tar.gz present. The
+    # latter covers the saturation base iter_0000.tar.gz (installed by run.sh),
+    # which is a tar snapshot even though the deltas are logged -- coverage MUST
+    # replay it as iter 0 or the base coverage is silently dropped.
+    IFS=$'\n' ITERS=( $(
+        { awk -F'\t' 'NF{print $1}' "$QLOG"
+          for _a in "$ARCHIVES_DIR"/iter_*.tar.gz; do [ -e "$_a" ] || continue; _b=${_a##*/iter_}; echo "$((10#${_b%.tar.gz}))"; done
+        } | sort -n -u ) ); unset IFS
+    N=${#ITERS[@]}
+else
+    shopt -s nullglob
+    ARCHIVES=( "$ARCHIVES_DIR"/iter_*.tar.gz )
+    shopt -u nullglob
+    if [ "${#ARCHIVES[@]}" -eq 0 ]; then
+        echo "[ERROR] no iter_*.tar.gz snapshots (nor queue.log) found in $ARCHIVES_DIR"
+        exit 1
+    fi
+    IFS=$'\n' ARCHIVES=( $(printf '%s\n' "${ARCHIVES[@]}" | sort) ); unset IFS
+    ITERS=()
+    for _a in "${ARCHIVES[@]}"; do _b=$(basename "$_a"); _n=$(echo "$_b" | grep -oP '\d+' | head -1); ITERS+=( "$((10#$_n))" ); done
+    N=${#ARCHIVES[@]}
 fi
-IFS=$'\n' ARCHIVES=( $(printf '%s\n' "${ARCHIVES[@]}" | sort) ); unset IFS
-N=${#ARCHIVES[@]}
-echo "[INFO] $N snapshots to process"
+echo "[INFO] $N snapshots to process (mode: $([ "$LOG_MODE" = 1 ] && echo log || echo tar))"
 
 cumulative=0
 last_index=$((N - 1))
 idx=0
-for archive in "${ARCHIVES[@]}"; do
-    base=$(basename "$archive")
-    iter=$(echo "$base" | grep -oP '\d+' | head -1)
-    iter=$((10#$iter))
+for _pos in "${!ITERS[@]}"; do
+    idx=$_pos
+    iter=${ITERS[$_pos]}
 
     new_inputs=0
-    if [ -s "$archive" ]; then
-        extract_dir=$(mktemp -d)
-        tar xzf "$archive" -C "$extract_dir" 2>/dev/null || true
-        while IFS= read -r f; do
-            new_inputs=$((new_inputs + 1))
-            run_input "$f"
-        done < <(find "$extract_dir" -path "*/queue/id:*" -type f 2>/dev/null)
-        rm -rf "$extract_dir"
+    if [ "$LOG_MODE" = 1 ]; then
+        _tar="$ARCHIVES_DIR/$(printf 'iter_%04d.tar.gz' "$iter")"
+        if [ -f "$_tar" ]; then
+            # A tar snapshot exists for this iter (e.g. the saturation base
+            # iter_0000.tar.gz) -> extract and replay it, like tar mode.
+            extract_dir=$(mktemp -d)
+            tar xzf "$_tar" -C "$extract_dir" 2>/dev/null || true
+            while IFS= read -r f; do
+                new_inputs=$((new_inputs + 1))
+                run_input "$f"
+            done < <(find "$extract_dir" -path "*/queue/id:*" -type f 2>/dev/null)
+            rm -rf "$extract_dir"
+        else
+            # Replay this iter's logged files from the resolved corpus root.
+            while IFS= read -r rel; do
+                [ -n "$rel" ] || continue
+                f="$CORPUS_ROOT/$rel"
+                [ -f "$f" ] || continue
+                new_inputs=$((new_inputs + 1))
+                run_input "$f"
+            done < <(awk -F'\t' -v it="$iter" '$1==it && $3!="-"{print $3}' "$QLOG")
+        fi
+    else
+        archive="${ARCHIVES[$_pos]}"
+        if [ -s "$archive" ]; then
+            extract_dir=$(mktemp -d)
+            tar xzf "$archive" -C "$extract_dir" 2>/dev/null || true
+            while IFS= read -r f; do
+                new_inputs=$((new_inputs + 1))
+                run_input "$f"
+            done < <(find "$extract_dir" -path "*/queue/id:*" -type f 2>/dev/null)
+            rm -rf "$extract_dir"
+        fi
     fi
     cumulative=$((cumulative + new_inputs))
 
