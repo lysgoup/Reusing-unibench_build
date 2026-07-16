@@ -127,3 +127,9 @@ RUN apt-get install -y autoconf automake libtool && \
       .libs/libpng16.a -lz \
       -o /d/p/cov/libpng_read_fuzzer && \
     rm -f /tmp/libfuzz-harness-proxy.c /tmp/fuzzer.o /tmp/proxy.o
+
+# Dynamorio download
+RUN cd /d/p/cov && \
+    wget --quiet https://github.com/DynamoRIO/dynamorio/releases/download/release_11.3.0-1/DynamoRIO-Linux-11.3.0.tar.gz && \
+    tar -xzvf DynamoRIO-Linux-11.3.0.tar.gz && \
+    rm DynamoRIO-Linux-11.3.0.tar.gz
