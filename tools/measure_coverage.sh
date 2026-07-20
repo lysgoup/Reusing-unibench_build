@@ -125,8 +125,9 @@ measure_one() {
     local campaign_dir="$COVERAGEDIR/$fuzzer/$target/$id"
     local archives_dir="$campaign_dir/archives"
 
-    if ! ls "$archives_dir"/iter_*.tar* >/dev/null 2>&1; then   # .tar (new) or .tar.gz (legacy)
-        echo_time "skip (no snapshots): $fuzzer/$target/$id"
+    # Accept tar snapshots (iter_*.tar*) OR log mode (queue.log).
+    if ! ls "$archives_dir"/iter_*.tar* >/dev/null 2>&1 && [ ! -f "$archives_dir/queue.log" ]; then
+        echo_time "skip (no snapshots/queue.log): $fuzzer/$target/$id"
         return 0
     fi
 
@@ -134,9 +135,17 @@ measure_one() {
     local -a cpu_args=()
     [ -n "$cpuset" ] && cpu_args=(--cpuset-cpus="$cpuset")
 
+    # Log mode reads the seed bytes from the persisted campaign queue instead of a
+    # redundant corpus.tar.gz: mount ar/$fuzzer/$target/$id as /campaign so the
+    # log's relative paths (findings/queue/id:*) resolve. Harmless in tar mode.
+    local ar_dir="$WORKDIR/ar/$fuzzer/$target/$id"
+    local -a campaign_mount=()
+    [ -d "$ar_dir/findings" ] && campaign_mount=(--volume="$(realpath "$ar_dir"):/campaign:ro")
+
     echo_time "measuring: $fuzzer/$target/$id${cpuset:+ (cpu $cpuset)}"
     docker run --rm \
         "${cpu_args[@]}" \
+        "${campaign_mount[@]}" \
         --volume="$(realpath "$archives_dir"):/archives:ro" \
         --volume="$(realpath "$campaign_dir"):/coverage_out" \
         --volume="$VOLUME_PATH:/volume" \

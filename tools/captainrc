@@ -13,27 +13,58 @@ WORKDIR=../_ffmpeg
 REPEAT=1
 
 # [WORKER_POOL]: a space-separated list of logical cores to allocate
-WORKER_POOL="$(seq 0 190)"
+WORKER_POOL="$(seq 0 59)"
+
+GLOBAL_FUZZARGS="--analysis-mode"
 
 # FUZZERS: an array of fuzzer names (from magma/fuzzers/*) to evaluate
 FUZZERS=(angora-reusing)
 
 # [fuzzer_TARGETS]: an array of target names (from magma/targets/*) to fuzz with
-angora_TARGETS=(exiv2 infotocap mp3gain mp42aac pdftotext wav2swf)
-angora_reusing_TARGETS=(ffmpeg)
+angora_TARGETS=(gdk-pixbuf-pixdata imginfo mp3gain)
+angora_reusing_TARGETS=(gdk-pixbuf-pixdata imginfo mp3gain)
 
 # [target_SEED]: single seed directory applied to all trials
-exiv2_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/exiv2/saturated_seed
-ffmpeg_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/ffmpeg/saturated_seed
-flvmeta_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/flvmeta/saturated_seed
-infotocap_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/infotocap/saturated_seed
-mp3gain_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/mp3gain/saturated_seed
-mp42aac_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/mp42aac/saturated_seed
-objdump_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/objdump/saturated_seed
-pdftotext_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/pdftotext/saturated_seed
-tcpdump_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/tcpdump/saturated_seed
-tiffsplit_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/tiffsplit/saturated_seed
-
+SATURATION_MODE=1
 # [target_SEEDS]: per-trial seed directories (array). SEEDS[i] is used for trial i.
 # If an element is missing for a given trial index, falls back to target_SEED.
-SAT=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/angora
+SAT=/data2/projects/reusing/_saturation/ar/angora
+
+imginfo_SEEDS=(
+    $SAT/imginfo/0/findings/queue
+    $SAT/imginfo/1/findings/queue
+    $SAT/imginfo/2/findings/queue
+    $SAT/imginfo/3/findings/queue
+    $SAT/imginfo/4/findings/queue
+    $SAT/imginfo/5/findings/queue
+    $SAT/imginfo/6/findings/queue
+    $SAT/imginfo/7/findings/queue
+    $SAT/imginfo/8/findings/queue
+    $SAT/imginfo/9/findings/queue
+)
+
+mp3gain_SEEDS=(
+    $SAT/mp3gain/0/findings/queue
+    $SAT/mp3gain/1/findings/queue
+    $SAT/mp3gain/2/findings/queue
+    $SAT/mp3gain/3/findings/queue
+    $SAT/mp3gain/4/findings/queue
+    $SAT/mp3gain/5/findings/queue
+    $SAT/mp3gain/6/findings/queue
+    $SAT/mp3gain/7/findings/queue
+    $SAT/mp3gain/8/findings/queue
+    $SAT/mp3gain/9/findings/queue
+)
+
+gdk_pixbuf_pixdata_SEEDS=(
+    $SAT/gdk_pixbuf_pixdata/0/findings/queue
+    $SAT/gdk_pixbuf_pixdata/1/findings/queue
+    $SAT/gdk_pixbuf_pixdata/2/findings/queue
+    $SAT/gdk_pixbuf_pixdata/3/findings/queue
+    $SAT/gdk_pixbuf_pixdata/4/findings/queue
+    $SAT/gdk_pixbuf_pixdata/5/findings/queue
+    $SAT/gdk_pixbuf_pixdata/6/findings/queue
+    $SAT/gdk_pixbuf_pixdata/7/findings/queue
+    $SAT/gdk_pixbuf_pixdata/8/findings/queue
+    $SAT/gdk_pixbuf_pixdata/9/findings/queue
+)

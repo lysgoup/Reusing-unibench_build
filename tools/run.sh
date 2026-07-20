@@ -45,6 +45,7 @@ fi
 WORKDIR="$(realpath "$WORKDIR")"
 export ARDIR="$WORKDIR/ar"
 export CACHEDIR="$WORKDIR/cache"
+export COVERAGEDIR="$WORKDIR/coverage"   # must match archive_campaigns.sh
 export LOGDIR="$WORKDIR/log"
 export POCDIR="$WORKDIR/poc"
 export LOCKDIR="$WORKDIR/lock"
@@ -113,10 +114,66 @@ start_campaign()
         export SHARED="$CAMPAIGN_CACHEDIR/$CACHECID"
         mkdir -p "$SHARED" && chmod 777 "$SHARED"
 
+        # Saturation-seed base: install THIS campaign's seed corpus as its
+        # iter_0000 baseline, so archive_queue skips the ~100k dry-run queue and
+        # archives only post-start deltas. Keyed by SEED (not target), so a
+        # per-trial ${TARGET}_SEEDS=(seed0 seed1 ...) array yields a distinct
+        # base per trial, while a shared ${TARGET}_SEED is tarred once and
+        # hardlinked to every campaign. We are inside launch_campaign, so $SEED
+        # and $CACHECID are the ACTUAL pair for this campaign (no trial<->cacheid
+        # guessing). flock serializes building the same base once.
+        BASE_SRC="${BASE_SRC:-$SEED}"
+        if [ "${SATURATION_MODE:-0}" = 1 ] && [ -n "$BASE_SRC" ] && [ -d "$BASE_SRC" ]; then
+            src_real="$(realpath "$BASE_SRC" 2>/dev/null)"; [ -n "$src_real" ] || src_real="$BASE_SRC"
+            seed_key=$(printf '%s' "$src_real" | sha1sum | cut -c1-16)
+            base_cache="$COVERAGEDIR/_base/$seed_key/iter_0000.tar.gz"
+            (
+                flock 201
+                # Invoke via `bash` (not direct exec) so a deployed copy without
+                # the +x bit still works -- direct exec fails with rc=126
+                # "Permission denied" and leaves the base MISSING. Built once per
+                # base source (flock + cache); shared across trials/arms.
+                [ -f "$base_cache" ] || \
+                    bash "$UNIBENCH/tools/make_base_archive.sh" "$BASE_SRC" "$base_cache" \
+                        >> "${LOGDIR}/make_base_${seed_key}.log" 2>&1
+            ) 201>"$LOCKDIR/base_${seed_key}.lock" || true   # a base hiccup must never abort the campaign (set -e)
+            camp_arch="$COVERAGEDIR/$FUZZER/$TARGET/$CACHECID/archives"
+            mkdir -p "$camp_arch"
+            # Tell archive_queue to skip the dry-run queue even if the base build
+            # failed, so a failure never degrades iter_0000 into a full-queue dump
+            # (which would inflate this trial's baseline vs its siblings).
+            : > "$camp_arch/.skip_preloaded"
+            if [ -f "$base_cache" ] && \
+               { ln -f "$base_cache" "$camp_arch/iter_0000.tar.gz" 2>/dev/null || \
+                 cp -f "$base_cache" "$camp_arch/iter_0000.tar.gz"; } && \
+               [ -f "$camp_arch/iter_0000.tar.gz" ]; then
+                echo_time "Saturation base installed: $FUZZER/$TARGET/$CACHECID/iter_0000 (seed_key=$seed_key)"
+            else
+                echo_time "ERROR: saturation base MISSING for $FUZZER/$TARGET/$CACHECID (base_src=$BASE_SRC, seed_key=$seed_key); iter_0000 baseline absent (see make_base_${seed_key}.log)"
+            fi
+        fi
+
         echo_time "Container unifuzz/unibench:$FUZZER/$TARGET/$ARCID started on CPU $AFFINITY"
         "$UNIBENCH"/tools/start.sh &> \
             "${LOGDIR}/${FUZZER}_${TARGET}_${ARCID}.log"
         echo_time "Container $FUZZER/$TARGET/$ARCID stopped"
+
+        # Saturation-generating run (SATURATION_GEN=1): tar the FINAL corpus once
+        # into base.tar.gz so later saturation-seed EXPERIMENTS reuse it directly
+        # as their iter_0000 base (Approach 1 -- cheapest: built here, amortized
+        # into this campaign; experiments just copy it). The queue is static now
+        # (fuzzer stopped). Written inside $SHARED so it lands at ar/.../base.tar.gz.
+        if [ "${SATURATION_GEN:-0}" = 1 ]; then
+            _q="$SHARED/findings/queue"; [ -d "$_q" ] || _q="$SHARED/findings/default/queue"
+            if [ -d "$_q" ]; then
+                if bash "$UNIBENCH/tools/make_base_archive.sh" "$_q" "$SHARED/base.tar.gz" \
+                       >> "${LOGDIR}/make_base_gen_${FUZZER}_${TARGET}_${ARCID}.log" 2>&1; then
+                    echo_time "Saturation full-tar written: $FUZZER/$TARGET/$ARCID/base.tar.gz"
+                else
+                    echo_time "WARNING: saturation full-tar failed for $FUZZER/$TARGET/$ARCID"
+                fi
+            fi
+        fi
 
         # overwrites empty $ARCID directory with the $SHARED directory
         mv -T "$SHARED" "${CAMPAIGN_ARDIR}/${ARCID}"
@@ -255,6 +312,35 @@ for FUZZER in "${BUILT_FUZZER[@]}"; do
             else
                 export SEED="$DEFAULT_SEED"
             fi
+
+            # Saturation base SOURCE, resolved separately from SEED (fuzzer -i).
+            # Precedence: per-trial ${TARGET}_BASES[i] > shared ${TARGET}_BASE >
+            # fall back to SEED. Lets the base come from the saturation coverage
+            # archives (a dir of iter_*.tar.gz) while the fuzzer still seeds from
+            # the queue. make_base_archive.sh auto-detects dir-of-id:* vs
+            # dir-of-iter_*.tar.gz.
+            bases_var="${TARGET_NORMALIZED}_BASES[@]"
+            trial_bases=("${!bases_var}")
+            base_single_var="${TARGET_NORMALIZED}_BASE"
+            if [ ${#trial_bases[@]} -gt 0 ] && [ -n "${trial_bases[$i]}" ]; then
+                export BASE_SRC="${trial_bases[$i]}"
+            elif [ -n "${!base_single_var}" ]; then
+                export BASE_SRC="${!base_single_var}"
+            else
+                # Auto: prefer a prebuilt saturation full tar (base.tar.gz sibling
+                # of the seed queue, written by a SATURATION_GEN run) -- Approach 1
+                # (cheapest: just copied). Otherwise fall back to the seed queue,
+                # tarred once before dry-run -- Approach 2.
+                _camp="${SEED%/findings/queue}"; _camp="${_camp%/findings/default/queue}"
+                if [ -f "$_camp/base.tar.gz" ]; then
+                    export BASE_SRC="$_camp/base.tar.gz"
+                else
+                    export BASE_SRC="$SEED"
+                fi
+            fi
+            # If the chosen base source does not exist, fall back to the seed queue.
+            [ -e "$BASE_SRC" ] || export BASE_SRC="$SEED"
+
             export NUMWORKERS="$(get_var_or_default "$FUZZER" 'CAMPAIGN_WORKERS')"
             export AFFINITY="$(allocate_workers)"
             start_ex &
