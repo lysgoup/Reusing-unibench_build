@@ -16,7 +16,7 @@ REPEAT=5
 WORKER_POOL="$(seq 70 110)"
 
 # [GLOBAL_FUZZARGS]: extra arguments passed to all fuzzers regardless of fuzzer/target
-GLOBAL_FUZZARGS=""
+GLOBAL_FUZZARGS="--analysis-mode"
 
 # FUZZERS: an array of fuzzer names (from magma/fuzzers/*) to evaluate
 FUZZERS=(angora-reusing)
