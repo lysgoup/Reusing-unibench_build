@@ -11,9 +11,10 @@
 # Also annotates exclusive_{FUZZER}.txt in place: for every trial under
 # ar/{FUZZER}/{TARGET}/*/findings/ that already has a coverage_analysis.txt,
 # scans it for the trial-id/input-id that first covered each exclusive
-# branch, and appends "{trial}-{id}" markers to that branch's line. Branches
-# with no match yet (no trial's coverage_analysis.txt found it) are left
-# unannotated.
+# branch, and appends "{trial}-{id}" markers to that branch's line -- plus
+# the mutation operator that produced that input as "{trial}-{id}(mut_op)",
+# when that trial also has an analysis_1.csv. Branches with no match yet (no
+# trial's coverage_analysis.txt found it) are left unannotated.
 #
 # Pre-requirements:
 # + $1:    WORKDIR   - main experiment directory (contains ar/)
@@ -31,7 +32,8 @@
 # Output: WORKDIR/coverage_comparison/{TARGET}/
 #   branches_{FUZZER}.txt    - all covered branches for that fuzzer (sorted, deduplicated)
 #   exclusive_{FUZZER}.txt   - branches covered only by that fuzzer, each line
-#                              "file:line:block:branch    {trial}-{id}    ..."
+#                              "file:line:block:branch    {trial}-{id}(mut_op)    ..."
+#                              (mut_op omitted when that trial has no analysis_1.csv)
 #   summary.txt              - per-fuzzer branch counts and exclusive counts
 ##
 
@@ -77,7 +79,10 @@ extract_branches() {
 
 # Annotate exclusive_file (one "file:line:block:branch" per line) in place:
 # append "{trial}-{id}" for every trial-input that covered that branch,
-# scanned from each trial's coverage_analysis.txt under trials_dir.
+# scanned from each trial's coverage_analysis.txt under trials_dir. If that
+# trial also has an analysis_1.csv (new_input_id,parent_input_id,mut_op,...),
+# the mutation operator that produced the input is appended too, as
+# "{trial}-{id}({mut_op})".
 annotate_exclusive() {
     local exclusive_file="$1"
     local trials_dir="$2"
@@ -87,24 +92,39 @@ annotate_exclusive() {
 
     for trial_dir in "$trials_dir"/*/; do
         [ -d "$trial_dir" ] || continue
-        local trial analysis
+        local trial analysis csv
         trial=$(basename "$trial_dir")
         analysis="$trial_dir/findings/coverage_analysis.txt"
         [ -f "$analysis" ] || continue
+        csv="$trial_dir/findings/analysis_1.csv"
 
-        awk -v trial="$trial" -v exclusive_file="$exclusive_file" '
+        awk -v trial="$trial" -v exclusive_file="$exclusive_file" -v csv="$csv" '
         BEGIN {
             while ((getline line < exclusive_file) > 0) {
                 exclusive[line] = 1
             }
             close(exclusive_file)
+
+            # analysis_1.csv: new_input_id,parent_input_id,mut_op,reusing_detail
+            # -- optional, only loaded if present.
+            if ((getline header < csv) > 0) {
+                while ((getline line < csv) > 0) {
+                    split(line, f, ",")
+                    mut_op[f[1] + 0] = f[3]
+                }
+            }
+            close(csv)
         }
         FNR == 1 { next }
         /^[0-9]/  { current_id = $0; next }
         /^  / {
             branch = substr($0, 3)
             if (branch in exclusive) {
-                print branch "\t" trial "-" current_id
+                marker = trial "-" current_id
+                if ((current_id + 0) in mut_op) {
+                    marker = marker "(" mut_op[current_id + 0] ")"
+                }
+                print branch "\t" marker
             }
         }
         ' "$analysis" >> "$annotations"

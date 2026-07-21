@@ -130,15 +130,16 @@ total_inputs: 16842
 |------|------|
 | `summary.txt` | 퍼저별 총 브랜치 수 및 exclusive 수 |
 | `branches_{FUZZER}.txt` | 해당 퍼저가 커버한 전체 브랜치 목록 |
-| `exclusive_{FUZZER}.txt` | 해당 퍼저만이 커버한 브랜치 목록, **각 줄에 trial-id 주석이 붙어있음** |
+| `exclusive_{FUZZER}.txt` | 해당 퍼저만이 커버한 브랜치 목록, **각 줄에 trial-id(+mutation) 주석이 붙어있음** |
 
-**`exclusive_{FUZZER}.txt`의 trial-id 주석**: `exclusive_{FUZZER}.txt`를 만든 직후, 그 fuzzer/target 밑에서 이미 `coverage_analysis.txt`가 존재하는 trial마다 스캔해서 각 브랜치를 실제로 처음 커버한 `{trial}-{id}`를 그 줄 끝에 덧붙인다. 형식:
+**`exclusive_{FUZZER}.txt`의 trial-id 주석**: `exclusive_{FUZZER}.txt`를 만든 직후, 그 fuzzer/target 밑에서 이미 `coverage_analysis.txt`가 존재하는 trial마다 스캔해서 각 브랜치를 실제로 처음 커버한 `{trial}-{id}`를 그 줄 끝에 덧붙인다. 그 trial에 `findings/analysis_1.csv`(`new_input_id,parent_input_id,mut_op,reusing_detail` 형식)도 있으면, 그 입력을 만든 mutation 종류(`mut_op`)까지 `{trial}-{id}(mut_op)` 형태로 같이 적는다 (csv가 없으면 mutation 없이 `{trial}-{id}`만). 형식:
 ```
-/unibench/jq-1.5/jv_dtoa.c:2053:0:0    0-001859    2-001923
+/unibench/jq-1.5/jv_dtoa.c:2053:0:0    0-001859(GD)    2-001923(Exploit)
 /unibench/jq-1.5/jv_dtoa.c:2095:1:2    1-001832
 /unibench/jq-1.5/jv_dtoa.c:3172:0:1
 ```
-- `0-001859` : trial 0의 입력 id:001859가 해당 브랜치를 커버
+- `0-001859(GD)` : trial 0의 입력 id:001859가 해당 브랜치를 커버, `GD`(Gradient Descent) mutation으로 생성됨
+- `1-001832` : trial 1이 커버했지만 그 trial에 `analysis_1.csv`가 없어서 mutation 정보 없음
 - 여러 trial에서 커버된 경우 공백으로 구분하여 나열
 - 주석 없는 줄: 어느 trial의 `coverage_analysis.txt`에도 기록되지 않은 브랜치 (해당 trial이 아직 [1]을 안 돌렸거나, 실제로 어떤 입력도 못 찾은 경우)
 
