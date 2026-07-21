@@ -9,15 +9,38 @@
 #
 # Pre-requirements:
 # + $1: WORKDIR - main experiment directory (contains ar/)
+#
+# Options:
+#   -t TARGET[,TARGET...]  only these targets (comma-separated). Default: all.
+#
+# ENV:
+#   CPUSET - [optional] passed through as `docker run --cpuset-cpus`, e.g.
+#            "51-60" or "51,53,55". Unset = unrestricted.
 ##
 
-if [ -z "$1" ]; then
-    echo "Usage: $0 WORKDIR"
+usage() {
+    echo "Usage: $0 WORKDIR [-t TARGET[,TARGET...]]"
     echo "  WORKDIR: main experiment directory (contains ar/)"
+    echo "  -t TARGET(s): only process these targets (comma-separated). Default: all."
+}
+
+if [ -z "$1" ]; then
+    usage
     exit 1
 fi
 
 WORKDIR="$(realpath "$1")"
+shift
+
+TARGET_FILTER=""
+while getopts ":t:" opt; do
+    case "$opt" in
+        t) TARGET_FILTER="$OPTARG" ;;
+        :) echo "[ERROR] option -$OPTARG requires a value"; usage; exit 1 ;;
+        \?) echo "[ERROR] unknown option -$OPTARG"; usage; exit 1 ;;
+    esac
+done
+
 ARDIR="$WORKDIR/ar"
 
 if [ ! -d "$ARDIR" ]; then
@@ -54,6 +77,15 @@ for fuzzer_dir in "$ARDIR"/*/; do
         [ -d "$target_dir" ] || continue
         TARGET=$(basename "$target_dir")
 
+        if [ -n "$TARGET_FILTER" ]; then
+            IFS=',' read -ra _tf <<< "$TARGET_FILTER"
+            _match=0
+            for _t in "${_tf[@]}"; do
+                [ "$_t" = "$TARGET" ] && { _match=1; break; }
+            done
+            [ "$_match" -eq 1 ] || continue
+        fi
+
         TOTAL=$((TOTAL + 1))
         OUTPUT_FILE="$target_dir/coverage_all_trials.txt"
 
@@ -79,8 +111,14 @@ for fuzzer_dir in "$ARDIR"/*/; do
 
         CONTAINER_NAME="batch-cov-${FUZZER}-${TARGET}-$(date +%s%N)"
 
+        CPUSET_ARGS=()
+        if [ -n "${CPUSET:-}" ]; then
+            CPUSET_ARGS=(--cpuset-cpus="$CPUSET")
+        fi
+
         docker run \
             --name="$CONTAINER_NAME" \
+            "${CPUSET_ARGS[@]}" \
             --volume="$(realpath "$target_dir"):/target_dir" \
             --volume="$VOLUME_PATH:/volume" \
             --env=TARGET="$TARGET" \

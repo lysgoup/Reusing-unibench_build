@@ -14,6 +14,10 @@
 #   $FINDINGS_DIR/coverage_analysis.txt
 #     Line 1: branch count after running all seeds
 #     Line 2+: ID of each fuzzer input that increased branch coverage
+#
+# ENV:
+#   CPUSET - [optional] passed through as `docker run --cpuset-cpus`, e.g.
+#            "51-60" or "51,53,55". Unset = unrestricted.
 ##
 
 usage() {
@@ -75,8 +79,15 @@ else
 fi
 echo_time "Target       : $TARGET"
 
+CPUSET_ARGS=()
+if [ -n "${CPUSET:-}" ]; then
+    echo_time "Cpuset       : $CPUSET"
+    CPUSET_ARGS=(--cpuset-cpus="$CPUSET")
+fi
+
 docker run \
     --name="$CONTAINER_NAME" \
+    "${CPUSET_ARGS[@]}" \
     --volume="$FINDINGS_DIR:/findings" \
     --volume="$VOLUME_PATH:/volume" \
     --env=TARGET="$TARGET" \
