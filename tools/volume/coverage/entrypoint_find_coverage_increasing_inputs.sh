@@ -10,6 +10,11 @@
 # ENV:
 #   TARGET      - target program name
 #   SEED_COUNT  - number of initial seed inputs
+#
+# If FINDINGS_DIR/analysis_1.csv (new_input_id,parent_input_id,mut_op,...) is
+# present, each id line in coverage_analysis.txt is annotated with the
+# mutation operator that produced that input, as "NNNNNN(mut_op)" instead of
+# plain "NNNNNN". Absent -> id lines are unchanged.
 ##
 
 umask 0000
@@ -76,12 +81,28 @@ fi
 
 OUTPUT_FILE="/findings/coverage_analysis.txt"
 
+# --- Load mutation operator per input id from analysis_1.csv, if present ---
+# Format: new_input_id,parent_input_id,mut_op,reusing_detail
+declare -A MUT_OP
+ANALYSIS_CSV="/findings/analysis_1.csv"
+if [ -f "$ANALYSIS_CSV" ]; then
+    while IFS=',' read -r new_id _parent_id mut_op _rest; do
+        [ "$new_id" = "new_input_id" ] && continue
+        MUT_OP["$new_id"]="$mut_op"
+    done < "$ANALYSIS_CSV"
+fi
+
 echo "[INFO] Target       : $TARGET"
 echo "[INFO] Coverage bin : $COVERAGE_BIN"
 echo "[INFO] Source dir   : $target_source_dir"
 echo "[INFO] Queue dir    : $QUEUE_DIR"
 echo "[INFO] Seed count   : $SEED_COUNT"
 echo "[INFO] Output       : $OUTPUT_FILE"
+if [ -f "$ANALYSIS_CSV" ]; then
+    echo "[INFO] Mutation info : $ANALYSIS_CSV found (${#MUT_OP[@]} entries) -- id lines will be annotated with mut_op"
+else
+    echo "[INFO] Mutation info : $ANALYSIS_CSV not found -- id lines will not be annotated"
+fi
 
 # --- Helper: run one input file through the coverage binary ---
 run_input() {
@@ -231,8 +252,14 @@ for ((i = ACTUAL_SEED_COUNT; i < TOTAL; i++)); do
         printf "\n"
         echo "[coverage++] id:$id_num ($PREV_BRANCHES → $NEW_BRANCHES branches)"
 
-        # Write id and new branches to file immediately; also print to terminal
-        echo "$id_num" >> "$OUTPUT_FILE"
+        # Write id (annotated with mut_op if known) and new branches to file
+        # immediately; also print to terminal
+        id_line="$id_num"
+        id_key=$((10#$id_num))
+        if [ -n "${MUT_OP[$id_key]+x}" ]; then
+            id_line="${id_num}(${MUT_OP[$id_key]})"
+        fi
+        echo "$id_line" >> "$OUTPUT_FILE"
         while IFS= read -r branch; do
             echo "  $branch" | tee -a "$OUTPUT_FILE"
         done < <(diff_branches "$PREV_INFO" "$CURR_INFO")

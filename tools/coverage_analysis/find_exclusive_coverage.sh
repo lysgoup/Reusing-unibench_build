@@ -121,7 +121,9 @@ annotate_exclusive() {
             branch = substr($0, 3)
             if (branch in exclusive) {
                 marker = trial "-" current_id
-                if ((current_id + 0) in mut_op) {
+                # Skip if find_coverage_increasing_inputs.sh already embedded
+                # "(mut_op)" into the id line itself -- avoids "(GD)(GD)".
+                if (current_id !~ /\(/ && (current_id + 0) in mut_op) {
                     marker = marker "(" mut_op[current_id + 0] ")"
                 }
                 print branch "\t" marker
