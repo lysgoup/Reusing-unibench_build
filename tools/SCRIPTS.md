@@ -20,14 +20,14 @@
 4. [커버리지 측정 스크립트](#커버리지-측정-스크립트)
    - [measure_coverage.sh](#measure_coveragesh)
    - [make_saturated_seed.sh](#make_saturated_seedsh)
-   - [coverage/single_input_coverage.sh](#coveragesingle_input_coveragesh)
+   - [coverage_analysis/single_input_coverage.sh](#coverage_analysissingle_input_coveragesh)
    - [archive_queue.sh](#archive_queuesh)
 5. [컨테이너 내부 엔트리포인트](#컨테이너-내부-엔트리포인트)
    - [volume/coverage/entrypoint.sh](#volumecoverageentrypointsh)
    - [volume/coverage/entrypoint_for_saturation.sh](#volumecoverageentrypoint_for_saturationsh)
    - [volume/coverage/entrypoint_single_coverage.sh](#volumecoverageentrypoint_single_coveragesh)
-   - [volume/coverage/entrypoint_analyze.sh](#volumecoverageentrypoint_analyzesh)
-   - [volume/coverage/entrypoint_batch_analyze.sh](#volumecoverageentrypoint_batch_analyzesh)
+   - [volume/coverage/entrypoint_find_coverage_increasing_inputs.sh](#volumecoverageentrypoint_find_coverage_increasing_inputssh)
+   - [volume/coverage/entrypoint_measure_aggregate_coverage.sh](#volumecoverageentrypoint_measure_aggregate_coveragesh)
 6. [유틸리티 스크립트](#유틸리티-스크립트)
    - [measure_memory.sh](#measure_memorysh)
 
@@ -48,7 +48,7 @@ tools/
 ├── make_saturated_seed.sh     # 포화도 기반 커버리지 측정
 ├── measure_memory.sh          # 컨테이너 메모리 사용량 측정
 ├── archive_queue.sh           # 퍼저 큐를 주기적으로 tar.gz 아카이브
-├── coverage/
+├── coverage_analysis/
 │   └── single_input_coverage.sh  # 단일 입력 커버리지 HTML 리포트 생성
 ├── seeds/                     # 타겟별 초기 시드 디렉토리
 └── volume/                    # 컨테이너에 마운트되는 볼륨
@@ -57,8 +57,8 @@ tools/
         ├── entrypoint.sh                  # 주기적 커버리지 측정 (archive 기반)
         ├── entrypoint_for_saturation.sh   # 포화도 감지 커버리지 측정
         ├── entrypoint_single_coverage.sh  # 단일 입력 커버리지 측정
-        ├── entrypoint_analyze.sh          # 큐 파일 순서별 커버리지 분석
-        └── entrypoint_batch_analyze.sh    # 전체 trial 누적 커버리지 분석
+        ├── entrypoint_find_coverage_increasing_inputs.sh          # 큐 파일 순서별 커버리지 분석
+        └── entrypoint_measure_aggregate_coverage.sh    # 전체 trial 누적 커버리지 분석
 ```
 
 Docker 이미지: `unifuzz/unibench:<fuzzer>`, `unifuzz/unibench:coverage`
@@ -456,19 +456,19 @@ WORKDIR/coverage/<fuzzer>/<target>/<id>/
 
 ---
 
-### coverage/single_input_coverage.sh
+### coverage_analysis/single_input_coverage.sh
 
-**경로**: `tools/coverage/single_input_coverage.sh`
+**경로**: `tools/coverage_analysis/single_input_coverage.sh`
 
 단일 입력 파일 하나를 지정한 타겟에서 실행하고 HTML 커버리지 리포트를 생성한다.
 
 #### 사용법
 
 ```bash
-./tools/coverage/single_input_coverage.sh INPUT_FILE TARGET OUTPUT_DIR
+./tools/coverage_analysis/single_input_coverage.sh INPUT_FILE TARGET OUTPUT_DIR
 
 # 예시
-./tools/coverage/single_input_coverage.sh \
+./tools/coverage_analysis/single_input_coverage.sh \
     /path/to/id:000042 \
     jq \
     /tmp/my_report
@@ -615,7 +615,7 @@ OUTPUT_DIR/
 
 ### volume/coverage/entrypoint_single_coverage.sh
 
-단일 입력 파일의 커버리지를 측정하고 HTML 리포트를 생성한다. `coverage/single_input_coverage.sh`에 의해 실행된다.
+단일 입력 파일의 커버리지를 측정하고 HTML 리포트를 생성한다. `coverage_analysis/single_input_coverage.sh`에 의해 실행된다.
 
 #### 마운트
 
@@ -641,7 +641,7 @@ OUTPUT_DIR/
 
 ---
 
-### volume/coverage/entrypoint_analyze.sh
+### volume/coverage/entrypoint_find_coverage_increasing_inputs.sh
 
 퍼저 큐 파일을 ID 순서대로 하나씩 처리하며, 각 입력이 새로운 브랜치를 커버하는지 추적한다. 어떤 입력이 커버리지를 증가시켰는지 분석하는 데 사용한다.
 
@@ -681,7 +681,7 @@ OUTPUT_DIR/
 
 ---
 
-### volume/coverage/entrypoint_batch_analyze.sh
+### volume/coverage/entrypoint_measure_aggregate_coverage.sh
 
 여러 trial의 큐 파일을 한꺼번에 실행해 누적 커버리지를 측정한다.
 

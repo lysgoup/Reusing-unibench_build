@@ -12,7 +12,7 @@
 # + $1:    WORKDIR   - main experiment directory (contains ar/)
 # + $2..N: FUZZERS   - fuzzer names to compare (e.g., angora angora-reusing forkserver_storfuzz)
 #
-# Pre-condition: batch_analyze_coverage.sh must have been run first to generate coverage.info files.
+# Pre-condition: measure_aggregate_coverage.sh must have been run first to generate coverage.info files.
 #
 # Output: WORKDIR/coverage_comparison/{TARGET}/
 #   branches_{FUZZER}.txt    - all covered branches for that fuzzer (sorted, deduplicated)
@@ -70,7 +70,7 @@ for fuzzer in "${FUZZERS[@]}"; do
 done
 
 if [ ${#ALL_TARGETS[@]} -eq 0 ]; then
-    echo "[ERROR] No coverage.info files found. Run batch_analyze_coverage.sh first."
+    echo "[ERROR] No coverage.info files found. Run measure_aggregate_coverage.sh first."
     exit 1
 fi
 

@@ -85,7 +85,7 @@ for fuzzer_dir in "$ARDIR"/*/; do
             --volume="$VOLUME_PATH:/volume" \
             --env=TARGET="$TARGET" \
             --env=TZ="Asia/Seoul" \
-            --entrypoint=/volume/coverage/entrypoint_batch_analyze.sh \
+            --entrypoint=/volume/coverage/entrypoint_measure_aggregate_coverage.sh \
             "unifuzz/unibench:coverage" &
 
         DOCKER_PID=$!

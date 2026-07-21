@@ -5,7 +5,9 @@
 #
 # Pre-requirements:
 # + $1: FINDINGS_DIR - path to fuzzer findings directory (containing queue/)
-# + $2: SEED_COUNT   - number of initial seed inputs
+# + $2: SEED_COUNT   - [optional] number of initial seed inputs. If omitted,
+#                      it's auto-detected from the "total_executed:" value on
+#                      the first line of FINDINGS_DIR/dryrun_log.txt.
 # + $3: TARGET       - target program name (e.g., exiv2, mp3gain)
 #
 # Output:
@@ -14,17 +16,41 @@
 #     Line 2+: ID of each fuzzer input that increased branch coverage
 ##
 
-if [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ]; then
+usage() {
     echo "Usage: $0 FINDINGS_DIR SEED_COUNT TARGET"
+    echo "   or: $0 FINDINGS_DIR TARGET"
     echo "  FINDINGS_DIR: path to fuzzer findings directory (containing queue/)"
-    echo "  SEED_COUNT:   number of initial seed inputs"
+    echo "  SEED_COUNT:   number of initial seed inputs. If omitted, auto-detected"
+    echo "                from 'total_executed:' on the first line of"
+    echo "                FINDINGS_DIR/dryrun_log.txt"
     echo "  TARGET:       target program name (e.g., exiv2, mp3gain)"
+}
+
+SEED_COUNT_AUTO_DETECTED=0
+if [ "$#" -eq 3 ]; then
+    FINDINGS_DIR="$(realpath "$1")"
+    SEED_COUNT="$2"
+    TARGET="$3"
+elif [ "$#" -eq 2 ]; then
+    FINDINGS_DIR="$(realpath "$1")"
+    TARGET="$2"
+    SEED_COUNT_AUTO_DETECTED=1
+
+    DRYRUN_LOG="$FINDINGS_DIR/dryrun_log.txt"
+    if [ ! -f "$DRYRUN_LOG" ]; then
+        echo "[ERROR] SEED_COUNT not given and $DRYRUN_LOG not found" >&2
+        exit 1
+    fi
+
+    SEED_COUNT="$(awk -F': *' '/^total_executed:/ {print $2; exit}' "$DRYRUN_LOG")"
+    if [ -z "$SEED_COUNT" ]; then
+        echo "[ERROR] SEED_COUNT not given and 'total_executed:' not found in $DRYRUN_LOG" >&2
+        exit 1
+    fi
+else
+    usage
     exit 1
 fi
-
-FINDINGS_DIR="$(realpath "$1")"
-SEED_COUNT="$2"
-TARGET="$3"
 
 UNIBENCH="${UNIBENCH:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." >/dev/null 2>&1 && pwd)}"
 export UNIBENCH
@@ -42,7 +68,11 @@ trap cleanup EXIT SIGINT SIGTERM
 
 echo_time "Starting one-shot coverage analysis"
 echo_time "Findings dir : $FINDINGS_DIR"
-echo_time "Seed count   : $SEED_COUNT"
+if [ "$SEED_COUNT_AUTO_DETECTED" -eq 1 ]; then
+    echo_time "Seed count   : $SEED_COUNT (auto-detected from dryrun_log.txt)"
+else
+    echo_time "Seed count   : $SEED_COUNT"
+fi
 echo_time "Target       : $TARGET"
 
 docker run \
@@ -52,7 +82,7 @@ docker run \
     --env=TARGET="$TARGET" \
     --env=SEED_COUNT="$SEED_COUNT" \
     --env=TZ="Asia/Seoul" \
-    --entrypoint=/volume/coverage/entrypoint_analyze.sh \
+    --entrypoint=/volume/coverage/entrypoint_find_coverage_increasing_inputs.sh \
     "unifuzz/unibench:coverage" &
 
 DOCKER_PID=$!

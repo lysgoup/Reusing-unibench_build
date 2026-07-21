@@ -7,9 +7,9 @@
 ## 전체 워크플로우
 
 ```
-[1] analyze_coverage.sh          단일 trial 커버리지 분석
+[1] find_coverage_increasing_inputs.sh          단일 trial 커버리지 분석
         ↓
-[2] batch_analyze_coverage.sh    전체 실험의 모든 fuzzer+target 누적 커버리지 측정
+[2] measure_aggregate_coverage.sh    전체 실험의 모든 fuzzer+target 누적 커버리지 측정
         ↓
 [3] compare_coverage.sh          퍼저 간 exclusive 브랜치 비교
         ↓
@@ -21,14 +21,14 @@
 
 ## 스크립트 상세
 
-### 1. `analyze_coverage.sh`
+### 1. `find_coverage_increasing_inputs.sh`
 
 실험이 끝난 단일 trial의 queue를 분석해, 어떤 입력이 새로운 브랜치를 커버했는지 기록한다.
 
 **사전 조건**: `unifuzz/unibench:coverage` Docker 이미지가 빌드되어 있어야 함.
 
 ```bash
-./tools/analyze_coverage.sh FINDINGS_DIR SEED_COUNT TARGET
+./tools/coverage_analysis/find_coverage_increasing_inputs.sh FINDINGS_DIR SEED_COUNT TARGET
 ```
 
 | 인자 | 설명 |
@@ -55,7 +55,7 @@
 
 **예시**:
 ```bash
-./tools/analyze_coverage.sh \
+./tools/coverage_analysis/find_coverage_increasing_inputs.sh \
   experiments/_storfuzz/ar/angora/imginfo/0/findings \
   30 \
   imginfo
@@ -63,12 +63,12 @@
 
 ---
 
-### 2. `batch_analyze_coverage.sh`
+### 2. `measure_aggregate_coverage.sh`
 
 실험 디렉토리 전체를 순회하며, 각 `fuzzer+target` 조합의 **모든 trial 입력을 합산**해 누적 커버리지를 측정한다.
 
 ```bash
-./tools/batch_analyze_coverage.sh WORKDIR
+./tools/coverage_analysis/measure_aggregate_coverage.sh WORKDIR
 ```
 
 | 인자 | 설명 |
@@ -98,14 +98,14 @@ total_inputs: 16842
 
 **예시**:
 ```bash
-./tools/batch_analyze_coverage.sh experiments/_storfuzz
+./tools/coverage_analysis/measure_aggregate_coverage.sh experiments/_storfuzz
 ```
 
 ---
 
 ### 3. `compare_coverage.sh`
 
-`batch_analyze_coverage.sh`로 생성된 `coverage.info` 파일들을 비교해, 각 퍼저가 **독점적으로** 커버한 브랜치를 찾는다.
+`measure_aggregate_coverage.sh`로 생성된 `coverage.info` 파일들을 비교해, 각 퍼저가 **독점적으로** 커버한 브랜치를 찾는다.
 
 ```bash
 ./tools/compare_coverage.sh WORKDIR FUZZER1 FUZZER2 [FUZZER3 ...]
@@ -116,7 +116,7 @@ total_inputs: 16842
 | `WORKDIR` | 메인 실험 디렉토리 |
 | `FUZZER*` | 비교할 퍼저 이름 (2개 이상) |
 
-**사전 조건**: `batch_analyze_coverage.sh` 실행 완료 (`coverage.info` 존재)
+**사전 조건**: `measure_aggregate_coverage.sh` 실행 완료 (`coverage.info` 존재)
 
 **동작**: 각 타겟별로 퍼저들의 커버드 브랜치 집합을 비교
 - `A exclusive` = A가 커버했으나 B, C 어느 것도 커버하지 않은 브랜치
@@ -153,7 +153,7 @@ forkserver_storfuzz             total:   4601  exclusive:     89
 
 | 인자 | 설명 |
 |------|------|
-| `COVERAGE_ANALYSIS_TXT` | `analyze_coverage.sh`가 생성한 파일 |
+| `COVERAGE_ANALYSIS_TXT` | `find_coverage_increasing_inputs.sh`가 생성한 파일 |
 | `EXCLUSIVE_TXT` | `compare_coverage.sh`가 생성한 `exclusive_*.txt` |
 
 **출력**: `COVERAGE_ANALYSIS_TXT`와 같은 디렉토리에 `coverage_analysis_exclusive.txt`
@@ -182,7 +182,7 @@ forkserver_storfuzz             total:   4601  exclusive:     89
 | `EXCLUSIVE_TXT` | `compare_coverage.sh`가 생성한 `exclusive_*.txt` |
 | `TRIALS_DIR` | trial 서브디렉토리들이 있는 디렉토리 (`ar/{FUZZER}/{TARGET}/`) |
 
-**사전 조건**: 각 trial에 `findings/coverage_analysis.txt` 존재 (`analyze_coverage.sh` 실행 완료)
+**사전 조건**: 각 trial에 `findings/coverage_analysis.txt` 존재 (`find_coverage_increasing_inputs.sh` 실행 완료)
 
 **출력**: `EXCLUSIVE_TXT`와 같은 디렉토리에 `{원본파일명}_annotated.txt`
 
@@ -212,10 +212,10 @@ forkserver_storfuzz             total:   4601  exclusive:     89
 FUZZER=coverage ./tools/build.sh
 
 # 1. 단일 trial 분석 (필요한 경우)
-./tools/analyze_coverage.sh <findings_dir> <seed_count> <target>
+./tools/coverage_analysis/find_coverage_increasing_inputs.sh <findings_dir> <seed_count> <target>
 
 # 2. 전체 실험 누적 커버리지 측정
-./tools/batch_analyze_coverage.sh experiments/_storfuzz
+./tools/coverage_analysis/measure_aggregate_coverage.sh experiments/_storfuzz
 
 # 3. 퍼저 간 exclusive 브랜치 비교
 ./tools/compare_coverage.sh experiments/_storfuzz angora angora-reusing forkserver_storfuzz
@@ -239,10 +239,10 @@ Docker 컨테이너 안에서 실행되는 스크립트로, 직접 호출하지 
 
 | 파일 | 호출처 |
 |------|--------|
-| `volume/coverage/entrypoint_analyze.sh` | `analyze_coverage.sh` |
-| `volume/coverage/entrypoint_batch_analyze.sh` | `batch_analyze_coverage.sh` |
+| `volume/coverage/entrypoint_find_coverage_increasing_inputs.sh` | `find_coverage_increasing_inputs.sh` |
+| `volume/coverage/entrypoint_measure_aggregate_coverage.sh` | `measure_aggregate_coverage.sh` |
 
-**마운트 구조** (`analyze_coverage.sh` 기준):
+**마운트 구조** (`find_coverage_increasing_inputs.sh` 기준):
 ```
 host: FINDINGS_DIR          → container: /findings
 host: tools/volume/         → container: /volume
