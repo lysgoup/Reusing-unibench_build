@@ -12,11 +12,11 @@
 [2] measure_aggregate_coverage.sh    전체 실험의 모든 fuzzer+target 누적 커버리지 측정
         ↓
 [3] find_exclusive_coverage.sh          퍼저 간 exclusive 브랜치 비교
-        ↓ (내장: [1]이 이미 돌아간 trial마다 exclusive 입력만 자동으로 필터링)
-[4] annotate_exclusive_coverage.sh  exclusive 브랜치를 어느 trial의 어느 입력이 커버했는지 주석 추가
+        (내장: [1]이 이미 돌아간 trial을 스캔해 exclusive_{FUZZER}.txt의
+         각 브랜치 옆에 어느 trial의 어느 입력이 커버했는지 바로 주석까지 붙임)
 ```
 
-**[3]이 필터링까지 한 번에 합니다**: `find_exclusive_coverage.sh`는 exclusive 브랜치를 계산한 직후, 그 fuzzer/target 밑에서 이미 `coverage_analysis.txt`가 있는 trial([1]이 먼저 돌아간 trial)을 전부 찾아 exclusive 브랜치를 하나라도 커버한 입력만 골라 `coverage_analysis_exclusive.txt`를 자체적으로 생성합니다 (구 `filter_exclusive_coverage.sh`의 로직이 내부 함수로 이식됨; 별도 스크립트는 더 이상 없음). `coverage_analysis.txt`가 없는 trial은 조용히 건너뛰므로, 원하는 trial부터 먼저 [1]을 돌려두면 [3] 실행 한 번으로 그 trial들의 `coverage_analysis_exclusive.txt`까지 바로 생성됩니다.
+**[3] 하나로 끝납니다**: `find_exclusive_coverage.sh`는 exclusive 브랜치를 계산한 직후, 그 fuzzer/target 밑에서 이미 `coverage_analysis.txt`가 있는 trial([1]이 먼저 돌아간 trial)을 전부 스캔해서 `exclusive_{FUZZER}.txt`의 각 줄에 `{trial}-{id}`를 바로 덧붙입니다 (구 `filter_exclusive_coverage.sh`, `annotate_exclusive_coverage.sh`의 로직이 모두 내부 함수로 이식됨; 별도 스크립트는 더 이상 없음). 아직 아무 trial도 그 브랜치를 찾지 못했으면 그 줄은 주석 없이 그대로 남습니다.
 
 ---
 
@@ -119,7 +119,7 @@ total_inputs: 16842
 
 **실행 전 [1], [2]가 먼저 돌아가 있어야 함**:
 - **[2] `measure_aggregate_coverage.sh` — 필수.** `coverage.info`가 하나도 없으면 이 스크립트는 즉시 에러로 종료한다.
-- **[1] `find_coverage_increasing_inputs.sh` — trial별 `coverage_analysis_exclusive.txt`를 받고 싶은 trial마다 필수.** 이게 안 돌아간 trial은 `exclusive_{FUZZER}.txt` 계산에는 영향 없지만, 그 trial의 `coverage_analysis_exclusive.txt`는 생성되지 않고 조용히 건너뛴다.
+- **[1] `find_coverage_increasing_inputs.sh` — trial-id 주석을 받고 싶은 trial마다 필수.** 이게 안 돌아간 trial은 `exclusive_{FUZZER}.txt` 계산에는 영향 없지만, 그 trial에서 찾은 입력은 주석에 반영되지 않는다.
 
 **동작**: 각 타겟별로 퍼저들의 커버드 브랜치 집합을 비교
 - `A exclusive` = A가 커버했으나 B, C 어느 것도 커버하지 않은 브랜치
@@ -130,9 +130,17 @@ total_inputs: 16842
 |------|------|
 | `summary.txt` | 퍼저별 총 브랜치 수 및 exclusive 수 |
 | `branches_{FUZZER}.txt` | 해당 퍼저가 커버한 전체 브랜치 목록 |
-| `exclusive_{FUZZER}.txt` | 해당 퍼저만이 커버한 브랜치 목록 |
+| `exclusive_{FUZZER}.txt` | 해당 퍼저만이 커버한 브랜치 목록, **각 줄에 trial-id 주석이 붙어있음** |
 
-**추가 출력**: `WORKDIR/ar/{FUZZER}/{TARGET}/{TRIAL}/findings/coverage_analysis_exclusive.txt` — `exclusive_{FUZZER}.txt`를 만든 직후, 그 fuzzer/target 밑에서 이미 `coverage_analysis.txt`가 존재하는 trial마다 exclusive 브랜치를 하나라도 커버한 입력만 골라 같은 위치에 생성한다 (없는 trial은 건너뜀). `find_coverage_increasing_inputs.sh`가 만든 `coverage_analysis.txt`를 그 자리에서 바로 필터링하는 내장 기능이라 별도 스크립트 호출이 필요 없다.
+**`exclusive_{FUZZER}.txt`의 trial-id 주석**: `exclusive_{FUZZER}.txt`를 만든 직후, 그 fuzzer/target 밑에서 이미 `coverage_analysis.txt`가 존재하는 trial마다 스캔해서 각 브랜치를 실제로 처음 커버한 `{trial}-{id}`를 그 줄 끝에 덧붙인다. 형식:
+```
+/unibench/jq-1.5/jv_dtoa.c:2053:0:0    0-001859    2-001923
+/unibench/jq-1.5/jv_dtoa.c:2095:1:2    1-001832
+/unibench/jq-1.5/jv_dtoa.c:3172:0:1
+```
+- `0-001859` : trial 0의 입력 id:001859가 해당 브랜치를 커버
+- 여러 trial에서 커버된 경우 공백으로 구분하여 나열
+- 주석 없는 줄: 어느 trial의 `coverage_analysis.txt`에도 기록되지 않은 브랜치 (해당 trial이 아직 [1]을 안 돌렸거나, 실제로 어떤 입력도 못 찾은 경우)
 
 `summary.txt` 예시:
 ```
@@ -144,42 +152,6 @@ forkserver_storfuzz             total:   4601  exclusive:     89
 **예시**:
 ```bash
 ./tools/coverage_analysis/find_exclusive_coverage.sh experiments/_storfuzz angora angora-reusing forkserver_storfuzz
-```
-
----
-
-### 4. `annotate_exclusive_coverage.sh`
-
-`exclusive_*.txt`의 각 브랜치 옆에, 해당 브랜치를 커버한 **trial 번호와 입력 id**를 주석으로 추가한다.
-
-```bash
-./tools/coverage_analysis/annotate_exclusive_coverage.sh EXCLUSIVE_TXT TRIALS_DIR
-```
-
-| 인자 | 설명 |
-|------|------|
-| `EXCLUSIVE_TXT` | `find_exclusive_coverage.sh`가 생성한 `exclusive_*.txt` |
-| `TRIALS_DIR` | trial 서브디렉토리들이 있는 디렉토리 (`ar/{FUZZER}/{TARGET}/`) |
-
-**사전 조건**: 각 trial에 `findings/coverage_analysis.txt` 존재 (`find_coverage_increasing_inputs.sh` 실행 완료)
-
-**출력**: `EXCLUSIVE_TXT`와 같은 디렉토리에 `{원본파일명}_annotated.txt`
-
-```
-/unibench/jq-1.5/jv_dtoa.c:2053:0:0    0-001859    2-001923
-/unibench/jq-1.5/jv_dtoa.c:2095:1:2    1-001832
-/unibench/jq-1.5/jv_dtoa.c:3172:0:1
-```
-
-- `0-001859` : trial 0의 입력 id:001859가 해당 브랜치를 커버
-- 여러 trial에서 커버된 경우 공백으로 구분하여 나열
-- annotation 없는 줄: 어느 trial의 `coverage_analysis.txt`에도 기록되지 않은 브랜치
-
-**예시**:
-```bash
-./tools/coverage_analysis/annotate_exclusive_coverage.sh \
-  experiments/_storfuzz/coverage_comparison/jq/exclusive_angora-reusing.txt \
-  experiments/_storfuzz/ar/angora-reusing/jq/
 ```
 
 ---
@@ -196,13 +168,8 @@ FUZZER=coverage ./tools/build.sh
 # 2. 전체 실험 누적 커버리지 측정
 ./tools/coverage_analysis/measure_aggregate_coverage.sh experiments/_storfuzz
 
-# 3. 퍼저 간 exclusive 브랜치 비교 (trial별 coverage_analysis_exclusive.txt까지 자동 생성)
+# 3. 퍼저 간 exclusive 브랜치 비교 (exclusive_{FUZZER}.txt에 trial-id 주석까지 자동으로 붙음)
 ./tools/coverage_analysis/find_exclusive_coverage.sh experiments/_storfuzz angora angora-reusing forkserver_storfuzz
-
-# 4. (선택) exclusive 브랜치에 trial-id 주석 추가
-./tools/coverage_analysis/annotate_exclusive_coverage.sh \
-  experiments/_storfuzz/coverage_comparison/jq/exclusive_angora-reusing.txt \
-  experiments/_storfuzz/ar/angora-reusing/jq/
 ```
 
 ---
