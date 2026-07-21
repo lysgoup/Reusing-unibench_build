@@ -8,16 +8,31 @@
 #   - Branches covered only by fuzzer B (not any other)
 #   - etc.
 #
+# Also filters per-trial results: for every trial under
+# ar/{FUZZER}/{TARGET}/*/findings/ that already has a coverage_analysis.txt,
+# keeps only the inputs that covered at least one of that fuzzer's freshly
+# computed exclusive branches, writing coverage_analysis_exclusive.txt right
+# there. Trials without a coverage_analysis.txt yet are silently skipped.
+#
 # Pre-requirements:
 # + $1:    WORKDIR   - main experiment directory (contains ar/)
 # + $2..N: FUZZERS   - fuzzer names to compare (e.g., angora angora-reusing forkserver_storfuzz)
 #
-# Pre-condition: measure_aggregate_coverage.sh must have been run first to generate coverage.info files.
+# REQUIRED before running this script:
+#   1) find_coverage_increasing_inputs.sh -- run per trial you want a
+#      coverage_analysis_exclusive.txt for. Without it, this script still
+#      computes exclusive_{FUZZER}.txt fine, it just has nothing to filter
+#      for that trial.
+#   2) measure_aggregate_coverage.sh -- run once per WORKDIR. This one is a
+#      hard requirement: without coverage.info files, this script exits
+#      immediately with an error.
 #
 # Output: WORKDIR/coverage_comparison/{TARGET}/
 #   branches_{FUZZER}.txt    - all covered branches for that fuzzer (sorted, deduplicated)
 #   exclusive_{FUZZER}.txt   - branches covered only by that fuzzer
 #   summary.txt              - per-fuzzer branch counts and exclusive counts
+# Output: ar/{FUZZER}/{TARGET}/{TRIAL}/findings/coverage_analysis_exclusive.txt
+#   (one per trial that already had a coverage_analysis.txt)
 ##
 
 if [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ]; then
@@ -58,6 +73,64 @@ extract_branches() {
         }
     }
     ' "$info_file" | sort
+}
+
+# Filter one trial's coverage_analysis.txt to keep only the input blocks that
+# covered at least one branch listed in exclusive_file. Writes
+# coverage_analysis_exclusive.txt next to analysis_file.
+filter_exclusive() {
+    local analysis_file="$1"
+    local exclusive_file="$2"
+    local output_file
+    output_file="$(dirname "$analysis_file")/coverage_analysis_exclusive.txt"
+
+    awk -v exclusive_file="$exclusive_file" -v outfile="$output_file" '
+    BEGIN {
+        while ((getline line < exclusive_file) > 0) {
+            exclusive[line] = 1
+        }
+        close(exclusive_file)
+    }
+
+    # Line 1: seed branch count -- always copy as-is
+    FNR == 1 {
+        print > outfile
+        next
+    }
+
+    # Input id line (no leading whitespace)
+    /^[0-9]/ {
+        # Flush previous block if it had at least one exclusive branch
+        if (current_id != "" && has_exclusive) {
+            print current_id > outfile
+            for (i = 1; i <= branch_count; i++) {
+                print branches[i] > outfile
+            }
+        }
+        current_id = $0
+        has_exclusive = 0
+        branch_count = 0
+        next
+    }
+
+    # Branch line (two leading spaces)
+    /^  / {
+        branch_count++
+        branches[branch_count] = $0
+        branch = substr($0, 3)
+        if (branch in exclusive) has_exclusive = 1
+        next
+    }
+
+    END {
+        if (current_id != "" && has_exclusive) {
+            print current_id > outfile
+            for (i = 1; i <= branch_count; i++) {
+                print branches[i] > outfile
+            }
+        }
+    }
+    ' "$analysis_file"
 }
 
 # Collect all targets present in at least one fuzzer
@@ -135,6 +208,16 @@ for target in "${!ALL_TARGETS[@]}"; do
         echo_time "  $fuzzer : $TOTAL_BRANCHES branches total, $EXCL_COUNT exclusive"
         printf "%-35s  total: %6d  exclusive: %6d\n" \
             "$fuzzer" "$TOTAL_BRANCHES" "$EXCL_COUNT" >> "$SUMMARY_FILE"
+
+        # Auto-chain: filter every trial's coverage_analysis.txt (if it
+        # already exists) against this fuzzer's exclusive branches.
+        FILTERED=0
+        for trial_analysis in "$ARDIR/$fuzzer/$target"/*/findings/coverage_analysis.txt; do
+            [ -f "$trial_analysis" ] || continue
+            filter_exclusive "$trial_analysis" "$excl_file"
+            FILTERED=$((FILTERED + 1))
+        done
+        [ "$FILTERED" -gt 0 ] && echo_time "  $fuzzer : filtered $FILTERED trial(s) -> coverage_analysis_exclusive.txt"
     done
 
     echo_time "  Results: $TARGET_OUTDIR"

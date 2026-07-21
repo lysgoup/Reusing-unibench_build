@@ -11,11 +11,12 @@
         ↓
 [2] measure_aggregate_coverage.sh    전체 실험의 모든 fuzzer+target 누적 커버리지 측정
         ↓
-[3] compare_coverage.sh          퍼저 간 exclusive 브랜치 비교
-        ↓
-[4] filter_exclusive_coverage.sh  특정 trial에서 exclusive 브랜치를 찾은 입력만 필터링
-[5] annotate_exclusive_coverage.sh  exclusive 브랜치를 어느 trial의 어느 입력이 커버했는지 주석 추가
+[3] find_exclusive_coverage.sh          퍼저 간 exclusive 브랜치 비교
+        ↓ (내장: [1]이 이미 돌아간 trial마다 exclusive 입력만 자동으로 필터링)
+[4] annotate_exclusive_coverage.sh  exclusive 브랜치를 어느 trial의 어느 입력이 커버했는지 주석 추가
 ```
+
+**[3]이 필터링까지 한 번에 합니다**: `find_exclusive_coverage.sh`는 exclusive 브랜치를 계산한 직후, 그 fuzzer/target 밑에서 이미 `coverage_analysis.txt`가 있는 trial([1]이 먼저 돌아간 trial)을 전부 찾아 exclusive 브랜치를 하나라도 커버한 입력만 골라 `coverage_analysis_exclusive.txt`를 자체적으로 생성합니다 (구 `filter_exclusive_coverage.sh`의 로직이 내부 함수로 이식됨; 별도 스크립트는 더 이상 없음). `coverage_analysis.txt`가 없는 trial은 조용히 건너뛰므로, 원하는 trial부터 먼저 [1]을 돌려두면 [3] 실행 한 번으로 그 trial들의 `coverage_analysis_exclusive.txt`까지 바로 생성됩니다.
 
 ---
 
@@ -103,12 +104,12 @@ total_inputs: 16842
 
 ---
 
-### 3. `compare_coverage.sh`
+### 3. `find_exclusive_coverage.sh`
 
 `measure_aggregate_coverage.sh`로 생성된 `coverage.info` 파일들을 비교해, 각 퍼저가 **독점적으로** 커버한 브랜치를 찾는다.
 
 ```bash
-./tools/compare_coverage.sh WORKDIR FUZZER1 FUZZER2 [FUZZER3 ...]
+./tools/coverage_analysis/find_exclusive_coverage.sh WORKDIR FUZZER1 FUZZER2 [FUZZER3 ...]
 ```
 
 | 인자 | 설명 |
@@ -116,7 +117,9 @@ total_inputs: 16842
 | `WORKDIR` | 메인 실험 디렉토리 |
 | `FUZZER*` | 비교할 퍼저 이름 (2개 이상) |
 
-**사전 조건**: `measure_aggregate_coverage.sh` 실행 완료 (`coverage.info` 존재)
+**실행 전 [1], [2]가 먼저 돌아가 있어야 함**:
+- **[2] `measure_aggregate_coverage.sh` — 필수.** `coverage.info`가 하나도 없으면 이 스크립트는 즉시 에러로 종료한다.
+- **[1] `find_coverage_increasing_inputs.sh` — trial별 `coverage_analysis_exclusive.txt`를 받고 싶은 trial마다 필수.** 이게 안 돌아간 trial은 `exclusive_{FUZZER}.txt` 계산에는 영향 없지만, 그 trial의 `coverage_analysis_exclusive.txt`는 생성되지 않고 조용히 건너뛴다.
 
 **동작**: 각 타겟별로 퍼저들의 커버드 브랜치 집합을 비교
 - `A exclusive` = A가 커버했으나 B, C 어느 것도 커버하지 않은 브랜치
@@ -129,6 +132,8 @@ total_inputs: 16842
 | `branches_{FUZZER}.txt` | 해당 퍼저가 커버한 전체 브랜치 목록 |
 | `exclusive_{FUZZER}.txt` | 해당 퍼저만이 커버한 브랜치 목록 |
 
+**추가 출력**: `WORKDIR/ar/{FUZZER}/{TARGET}/{TRIAL}/findings/coverage_analysis_exclusive.txt` — `exclusive_{FUZZER}.txt`를 만든 직후, 그 fuzzer/target 밑에서 이미 `coverage_analysis.txt`가 존재하는 trial마다 exclusive 브랜치를 하나라도 커버한 입력만 골라 같은 위치에 생성한다 (없는 trial은 건너뜀). `find_coverage_increasing_inputs.sh`가 만든 `coverage_analysis.txt`를 그 자리에서 바로 필터링하는 내장 기능이라 별도 스크립트 호출이 필요 없다.
+
 `summary.txt` 예시:
 ```
 angora                          total:   4823  exclusive:    142
@@ -138,48 +143,22 @@ forkserver_storfuzz             total:   4601  exclusive:     89
 
 **예시**:
 ```bash
-./tools/compare_coverage.sh experiments/_storfuzz angora angora-reusing forkserver_storfuzz
+./tools/coverage_analysis/find_exclusive_coverage.sh experiments/_storfuzz angora angora-reusing forkserver_storfuzz
 ```
 
 ---
 
-### 4. `filter_exclusive_coverage.sh`
-
-`coverage_analysis.txt`에서 **exclusive 브랜치를 하나라도 커버한 입력**만 남겨 새 파일을 만든다.
-
-```bash
-./tools/filter_exclusive_coverage.sh COVERAGE_ANALYSIS_TXT EXCLUSIVE_TXT
-```
-
-| 인자 | 설명 |
-|------|------|
-| `COVERAGE_ANALYSIS_TXT` | `find_coverage_increasing_inputs.sh`가 생성한 파일 |
-| `EXCLUSIVE_TXT` | `compare_coverage.sh`가 생성한 `exclusive_*.txt` |
-
-**출력**: `COVERAGE_ANALYSIS_TXT`와 같은 디렉토리에 `coverage_analysis_exclusive.txt`
-
-형식은 `coverage_analysis.txt`와 동일하되, exclusive 브랜치를 포함한 입력만 포함됨.
-
-**예시**:
-```bash
-./tools/filter_exclusive_coverage.sh \
-  experiments/_storfuzz/ar/angora-reusing/jq/0/findings/coverage_analysis.txt \
-  experiments/_storfuzz/coverage_comparison/jq/exclusive_angora-reusing.txt
-```
-
----
-
-### 5. `annotate_exclusive_coverage.sh`
+### 4. `annotate_exclusive_coverage.sh`
 
 `exclusive_*.txt`의 각 브랜치 옆에, 해당 브랜치를 커버한 **trial 번호와 입력 id**를 주석으로 추가한다.
 
 ```bash
-./tools/annotate_exclusive_coverage.sh EXCLUSIVE_TXT TRIALS_DIR
+./tools/coverage_analysis/annotate_exclusive_coverage.sh EXCLUSIVE_TXT TRIALS_DIR
 ```
 
 | 인자 | 설명 |
 |------|------|
-| `EXCLUSIVE_TXT` | `compare_coverage.sh`가 생성한 `exclusive_*.txt` |
+| `EXCLUSIVE_TXT` | `find_exclusive_coverage.sh`가 생성한 `exclusive_*.txt` |
 | `TRIALS_DIR` | trial 서브디렉토리들이 있는 디렉토리 (`ar/{FUZZER}/{TARGET}/`) |
 
 **사전 조건**: 각 trial에 `findings/coverage_analysis.txt` 존재 (`find_coverage_increasing_inputs.sh` 실행 완료)
@@ -198,7 +177,7 @@ forkserver_storfuzz             total:   4601  exclusive:     89
 
 **예시**:
 ```bash
-./tools/annotate_exclusive_coverage.sh \
+./tools/coverage_analysis/annotate_exclusive_coverage.sh \
   experiments/_storfuzz/coverage_comparison/jq/exclusive_angora-reusing.txt \
   experiments/_storfuzz/ar/angora-reusing/jq/
 ```
@@ -217,16 +196,11 @@ FUZZER=coverage ./tools/build.sh
 # 2. 전체 실험 누적 커버리지 측정
 ./tools/coverage_analysis/measure_aggregate_coverage.sh experiments/_storfuzz
 
-# 3. 퍼저 간 exclusive 브랜치 비교
-./tools/compare_coverage.sh experiments/_storfuzz angora angora-reusing forkserver_storfuzz
+# 3. 퍼저 간 exclusive 브랜치 비교 (trial별 coverage_analysis_exclusive.txt까지 자동 생성)
+./tools/coverage_analysis/find_exclusive_coverage.sh experiments/_storfuzz angora angora-reusing forkserver_storfuzz
 
-# 4. (선택) 특정 trial에서 exclusive 브랜치를 찾은 입력만 필터링
-./tools/filter_exclusive_coverage.sh \
-  experiments/_storfuzz/ar/angora-reusing/jq/0/findings/coverage_analysis.txt \
-  experiments/_storfuzz/coverage_comparison/jq/exclusive_angora-reusing.txt
-
-# 5. (선택) exclusive 브랜치에 trial-id 주석 추가
-./tools/annotate_exclusive_coverage.sh \
+# 4. (선택) exclusive 브랜치에 trial-id 주석 추가
+./tools/coverage_analysis/annotate_exclusive_coverage.sh \
   experiments/_storfuzz/coverage_comparison/jq/exclusive_angora-reusing.txt \
   experiments/_storfuzz/ar/angora-reusing/jq/
 ```
