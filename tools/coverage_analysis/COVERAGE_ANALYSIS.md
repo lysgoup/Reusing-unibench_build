@@ -15,6 +15,7 @@
         ↓
 [4] filter_exclusive_coverage.sh  특정 trial에서 exclusive 브랜치를 찾은 입력만 필터링
 [5] annotate_exclusive_coverage.sh  exclusive 브랜치를 어느 trial의 어느 입력이 커버했는지 주석 추가
+[6] annotate_exclusive_mutop.sh    exclusive 브랜치를 커버한 입력의 mutation operator까지 주석 추가
 ```
 
 ---
@@ -205,6 +206,44 @@ forkserver_storfuzz             total:   4601  exclusive:     89
 
 ---
 
+### 6. `annotate_exclusive_mutop.sh`
+
+`exclusive_*.txt`의 각 브랜치 옆에, 해당 브랜치를 커버한 **trial 번호, 입력 id, 그리고 그 입력을 만든 mutation operator(mut_op)**를 주석으로 추가한다.
+
+퍼저의 "exclusive" 커버리지 우위가 실제로 그 퍼저의 특징적인 전략(예: `Reusing`) 덕분인지, 아니면 같은 퓨저 안에서 같이 도는 다른 일반 전략(GD, Exploit, AFL, OneByte, CmpFn 등) 덕분인지 구분할 때 사용한다.
+
+```bash
+./tools/annotate_exclusive_mutop.sh EXCLUSIVE_TXT TRIALS_DIR
+```
+
+| 인자 | 설명 |
+|------|------|
+| `EXCLUSIVE_TXT` | `compare_coverage.sh`가 생성한 `exclusive_*.txt` |
+| `TRIALS_DIR` | trial 서브디렉토리들이 있는 디렉토리 (`ar/{FUZZER}/{TARGET}/`) |
+
+**사전 조건**: 각 trial에 `findings/coverage_analysis.txt`(`analyze_coverage.sh` 실행 완료)와 `findings/analysis_1.csv`(`new_input_id,parent_input_id,mut_op,reusing_detail`) 존재.
+
+**출력**: `EXCLUSIVE_TXT`와 같은 디렉토리에 `{원본파일명}_mutop.txt`
+
+```
+/unibench/exiv2-0.26/src/tiffcomposite_int.hpp:1665:80:182    6-020439:GD    7-020159:Exploit    8-020226:GD    9-020233:GD
+/unibench/exiv2-0.26/src/tags.cpp:2712:4294967295:1    9-020300:GD
+```
+
+- `6-020439:GD` : trial 6의 입력 id:020439가 해당 브랜치를 커버했고, 그 입력은 `GD`(gradient descent) 연산으로 생성됨
+- 여러 trial에서 커버된 경우 공백으로 구분하여 나열
+- `analysis_1.csv`에 해당 입력 id가 없으면(= seed 입력) `SEED_OR_UNTRACKED`로 표기
+- annotation 없는 줄: 어느 trial의 `coverage_analysis.txt`에도 기록되지 않은 브랜치
+
+**예시**:
+```bash
+./tools/annotate_exclusive_mutop.sh \
+  experiments/_storfuzz/coverage_comparison/jq/exclusive_angora-reusing.txt \
+  experiments/_storfuzz/ar/angora-reusing/jq/
+```
+
+---
+
 ## 실행 순서 요약
 
 ```bash
@@ -227,6 +266,11 @@ FUZZER=coverage ./tools/build.sh
 
 # 5. (선택) exclusive 브랜치에 trial-id 주석 추가
 ./tools/annotate_exclusive_coverage.sh \
+  experiments/_storfuzz/coverage_comparison/jq/exclusive_angora-reusing.txt \
+  experiments/_storfuzz/ar/angora-reusing/jq/
+
+# 6. (선택) exclusive 브랜치에 mutation operator 주석 추가
+./tools/annotate_exclusive_mutop.sh \
   experiments/_storfuzz/coverage_comparison/jq/exclusive_angora-reusing.txt \
   experiments/_storfuzz/ar/angora-reusing/jq/
 ```

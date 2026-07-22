@@ -30,6 +30,7 @@ export UNIBENCH
 source "$UNIBENCH/tools/common.sh"
 
 VOLUME_PATH="$(realpath "$UNIBENCH/tools/volume")"
+COV_TIMEOUT="${COV_TIMEOUT:-5}"
 
 TOTAL=0
 SKIPPED=0
@@ -84,6 +85,7 @@ for fuzzer_dir in "$ARDIR"/*/; do
             --volume="$(realpath "$target_dir"):/target_dir" \
             --volume="$VOLUME_PATH:/volume" \
             --env=TARGET="$TARGET" \
+            --env=COV_TIMEOUT="$COV_TIMEOUT" \
             --env=TZ="Asia/Seoul" \
             --entrypoint=/volume/coverage/entrypoint_measure_aggregate_coverage.sh \
             "unifuzz/unibench:coverage" &

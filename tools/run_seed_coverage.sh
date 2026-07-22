@@ -25,6 +25,7 @@ fi
 
 UNIBENCH="${UNIBENCH:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../" >/dev/null 2>&1 && pwd)}"
 VOLUME_PATH="$(realpath "$UNIBENCH/tools/volume")"
+COV_TIMEOUT="${COV_TIMEOUT:-5}"
 
 CONTAINER_NAME="seed-cov-${TARGET}-$(date +%s%N)"
 
@@ -43,6 +44,7 @@ docker run \
     --volume="$SEED_DIR:/seeds:ro" \
     --volume="$VOLUME_PATH:/volume" \
     --env=TARGET="$TARGET" \
+    --env=COV_TIMEOUT="$COV_TIMEOUT" \
     --env=TZ="Asia/Seoul" \
     --entrypoint=/volume/coverage/entrypoint_run_seed_coverage.sh \
     "unifuzz/unibench:coverage"

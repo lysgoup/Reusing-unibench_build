@@ -10,10 +10,13 @@
 # ENV:
 #   TARGET      - target program name
 #   SEED_COUNT  - number of initial seed inputs
+#   COV_TIMEOUT - per-input replay timeout in seconds (default 5)
 ##
 
 umask 0000
 ulimit -c 0
+
+COV_TIMEOUT="${COV_TIMEOUT:-5}"
 
 # --- Validate environment ---
 if [ -z "${TARGET:-}" ]; then
@@ -104,9 +107,9 @@ run_input() {
     # gcov data is not written when the binary crashes, so those inputs
     # simply don't contribute to coverage — the analysis still continues.
     if [ -n "$target_stdin_from_file" ]; then
-        timeout 1 "$COVERAGE_BIN" "${cmd_args[@]}" < "$tmp" >/dev/null 2>&1 &
+        timeout "$COV_TIMEOUT" "$COVERAGE_BIN" "${cmd_args[@]}" < "$tmp" >/dev/null 2>&1 &
     else
-        timeout 1 "$COVERAGE_BIN" "${cmd_args[@]}" >/dev/null 2>&1 &
+        timeout "$COV_TIMEOUT" "$COVERAGE_BIN" "${cmd_args[@]}" >/dev/null 2>&1 &
     fi
     wait $! 2>/dev/null || true
 

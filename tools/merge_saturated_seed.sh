@@ -1,13 +1,13 @@
 #!/bin/bash -e
 
 ##
-# Merge queue files from multiple fuzzing trials into a single deduplicated seed corpus.
+# Merge queue files from fuzzing trials 0-4 into a single deduplicated seed corpus.
 # Uses SHA-256 hashing to eliminate duplicate inputs.
 #
 # Usage: $0 <fuzzer_target_dir>
 # Example: $0 /path/to/ar/angora/mp3gain
 #
-# Expects: <dir>/{0,1,2,...}/findings/queue/id:*
+# Expects: <dir>/{0,1,2,3,4}/findings/queue/id:*
 # Output:  <dir>/saturated_seed/
 ##
 
@@ -31,10 +31,9 @@ declare -A seen_hashes
 counter=0
 total=0
 
-for run_dir in "$TARGET_DIR"/*/; do
-    run_id=$(basename "$run_dir")
-    # skip non-numeric directories (e.g. saturated_seed itself)
-    [[ "$run_id" =~ ^[0-9]+$ ]] || continue
+for run_id in 0 1 2 3 4; do
+    run_dir="$TARGET_DIR/$run_id"
+    [ -d "$run_dir" ] || continue
 
     queue_dir="$run_dir/findings/queue"
     [ -d "$queue_dir" ] || continue

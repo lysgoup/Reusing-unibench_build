@@ -30,6 +30,7 @@ mkdir -p "$OUTPUT_DIR"
 
 UNIBENCH="${UNIBENCH:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." >/dev/null 2>&1 && pwd)}"
 VOLUME_PATH="$(realpath "$UNIBENCH/tools/volume")"
+COV_TIMEOUT="${COV_TIMEOUT:-5}"
 
 # Docker volume specs use ':' as separator, so file paths containing ':' (e.g. id:001789)
 # must be copied to a colon-free temporary path before mounting.
@@ -54,6 +55,7 @@ docker run \
     --volume="$OUTPUT_DIR:/report" \
     --volume="$VOLUME_PATH:/volume" \
     --env=TARGET="$TARGET" \
+    --env=COV_TIMEOUT="$COV_TIMEOUT" \
     --entrypoint=/volume/coverage/entrypoint_single_coverage.sh \
     "unifuzz/unibench:coverage" &
 

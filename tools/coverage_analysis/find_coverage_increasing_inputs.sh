@@ -57,6 +57,7 @@ export UNIBENCH
 source "$UNIBENCH/tools/common.sh"
 
 VOLUME_PATH="$(realpath "$UNIBENCH/tools/volume")"
+COV_TIMEOUT="${COV_TIMEOUT:-5}"
 
 CONTAINER_NAME="analyze-cov-${TARGET}-$(date +%s%N)"
 
@@ -81,6 +82,7 @@ docker run \
     --volume="$VOLUME_PATH:/volume" \
     --env=TARGET="$TARGET" \
     --env=SEED_COUNT="$SEED_COUNT" \
+    --env=COV_TIMEOUT="$COV_TIMEOUT" \
     --env=TZ="Asia/Seoul" \
     --entrypoint=/volume/coverage/entrypoint_find_coverage_increasing_inputs.sh \
     "unifuzz/unibench:coverage" &

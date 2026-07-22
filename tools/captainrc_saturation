@@ -7,18 +7,16 @@
 ###
 
 # WORKDIR: path to directory where shared volumes will be created
-WORKDIR=/tmp/myeonggyu/_saturation_5D_10T_S1
+WORKDIR=../_saturation_after_fix_afl
 
 # REPEAT: number of campaigns to run per program (per fuzzer)
 REPEAT=10
 
 # [WORKER_POOL]: a space-separated list of logical cores to allocate
-WORKER_POOL="$(seq 0 59)"
+WORKER_POOL="$(seq 45 95)"
 
 # FUZZERS: an array of fuzzer names (from magma/fuzzers/*) to evaluate
 FUZZERS=(angora)
 
 # [fuzzer_TARGETS]: an array of target names (from magma/targets/*) to fuzz with
-angora_TARGETS=(cflow nm sqlite3 imginfo jq mujs)
-
-# [target_SEED]
+angora_TARGETS=(exiv2 tiffsplit infotocap jq imginfo)
