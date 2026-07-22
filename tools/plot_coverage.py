@@ -210,6 +210,37 @@ def collect_and_save_branch_data(workdir, coverage_dir, data_dir):
     return dict(data_summary), files_created
 
 
+# Bottom margin is a fixed constant (not scaled to the data range) so that
+# small gaps between curves near their max aren't swamped by whitespace
+# reserved for the low end of the range.
+BOTTOM_MARGIN = 20
+
+
+def set_ylim_with_margin(ax, all_values):
+    """
+    Set Y-axis limits with a fixed bottom margin and a top margin that scales
+    with the max value, so small differences between curves near their max
+    stay visible regardless of how far the range extends toward zero.
+
+    Both margins are capped by the data's actual spread (max - min): when the
+    curves are nearly identical, a margin sized for the raw magnitude would
+    swallow the whole gap between them. Capping it to the spread shrinks the
+    Y range down toward the data instead, so matplotlib's tick locator picks
+    a much finer step (e.g. 1 instead of 20) and the difference stays visible.
+    """
+    if not all_values:
+        return
+    min_val = min(all_values)
+    max_val = max(all_values)
+    spread = max_val - min_val
+    spread_cap = max(spread * 0.5, 1)
+
+    bottom_margin = min(BOTTOM_MARGIN, spread_cap)
+    top_margin = min(max(max_val * 0.03, 10), spread_cap)
+
+    ax.set_ylim(min_val - bottom_margin, max_val + top_margin)
+
+
 def plot_branch_graphs(graph_dir, data_dir, interval, log_x=False):
     """
     Generate branch hit count graphs from data files.
@@ -316,14 +347,8 @@ def plot_branch_graphs(graph_dir, data_dir, interval, log_x=False):
         if avg_data:
             ax.plot(time_points, avg_data, color='red', linewidth=2, label='avg', marker='o', markersize=2.5)
 
-        # Set Y-axis range based on data with 5% margin
-        if all_values:
-            min_val = min(all_values)
-            max_val = max(all_values)
-            margin = max((max_val - min_val) * 0.25, 50)
-            if margin == 0:
-                margin = max(10, min_val * 0.01)
-            ax.set_ylim(min_val - margin, max_val + margin)
+        # Set Y-axis range: fixed bottom margin, top margin scaled to max_val
+        set_ylim_with_margin(ax, all_values)
 
         # Set X-axis range and scale
         if log_x:
@@ -483,14 +508,8 @@ def plot_comparison_graphs(graph_dir, data_dir, interval, log_x=False):
             # Plot average line
             ax.plot(time_points, avg_data, color=color, linewidth=2, label=fuzzer_name, marker='o', markersize=2.5)
 
-        # Set Y-axis range based on data with same method as individual graphs
-        if all_values:
-            min_val = min(all_values)
-            max_val = max(all_values)
-            margin = max((max_val - min_val) * 0.25, 50)
-            if margin == 0:
-                margin = max(10, min_val * 0.01)
-            ax.set_ylim(min_val - margin, max_val + margin)
+        # Set Y-axis range: fixed bottom margin, top margin scaled to max_val
+        set_ylim_with_margin(ax, all_values)
 
         # Set X-axis range and scale
         if log_x:
@@ -600,13 +619,8 @@ def plot_per_trial_comparison_graphs(graph_dir, data_dir, interval, log_x=False)
                         label=fuzzer_name, marker='o', markersize=2.5)
                 all_values.extend(values)
 
-            if all_values:
-                min_val = min(all_values)
-                max_val = max(all_values)
-                margin = max((max_val - min_val) * 0.25, 50)
-                if margin == 0:
-                    margin = max(10, min_val * 0.01)
-                ax.set_ylim(min_val - margin, max_val + margin)
+            # Set Y-axis range: fixed bottom margin, top margin scaled to max_val
+            set_ylim_with_margin(ax, all_values)
 
             if log_x:
                 ax.set_xscale('log')
