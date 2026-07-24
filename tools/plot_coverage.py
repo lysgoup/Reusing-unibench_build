@@ -11,11 +11,43 @@ import argparse
 from collections import defaultdict
 
 try:
+    import numpy as np
     import matplotlib.pyplot as plt
     from matplotlib.ticker import MaxNLocator
-except ImportError:
-    print("Error: matplotlib is required. Install with: pip install matplotlib")
+except ImportError as e:
+    print(f"Error: {e.name} is required. Install with: pip install numpy matplotlib")
     sys.exit(1)
+
+
+def bootstrap_ci(values, n_resamples=1000, confidence=0.95, seed=42, statistic='mean'):
+    """
+    Compute a bootstrap confidence interval for the mean or median of `values`.
+
+    Args:
+        statistic: 'mean' or 'median' - which statistic the CI is built around
+
+    Returns:
+        tuple: (lower, upper) bounds of the confidence interval
+    """
+    values = np.asarray(values, dtype=float)
+    n = values.size
+    if n == 0:
+        return None, None
+    if n == 1:
+        return float(values[0]), float(values[0])
+
+    rng = np.random.default_rng(seed)
+    resample_idx = rng.integers(0, n, size=(n_resamples, n))
+    resamples = values[resample_idx]
+    if statistic == 'median':
+        resample_stats = np.median(resamples, axis=1)
+    else:
+        resample_stats = resamples.mean(axis=1)
+
+    alpha = 1 - confidence
+    lower = np.percentile(resample_stats, 100 * alpha / 2)
+    upper = np.percentile(resample_stats, 100 * (1 - alpha / 2))
+    return float(lower), float(upper)
 
 
 def check_coverage_directory(workdir):
@@ -106,7 +138,7 @@ def extract_branch_hit_counts(coverage_log_path):
         return None
 
 
-def collect_and_save_branch_data(workdir, coverage_dir, data_dir):
+def collect_and_save_branch_data(workdir, coverage_dir, data_dir, use_median=False):
     """
     Collect branch hit count data and save to files.
 
@@ -184,23 +216,24 @@ def collect_and_save_branch_data(workdir, coverage_dir, data_dir):
                             line += f" {count}"
                         f.write(line + "\n")
 
-                    # Calculate and write averages
+                    # Calculate and write the center line (mean or median)
                     # Find the minimum number of columns (only use columns where all campaigns have data)
                     if campaign_data:
                         min_columns = min(len(counts) for _, counts in campaign_data)
 
                         if min_columns > 0:
-                            averages = []
+                            centers = []
                             for col_idx in range(min_columns):
                                 col_values = [counts[col_idx] for _, counts in campaign_data]
                                 if col_values:
-                                    avg = sum(col_values) / len(col_values)
-                                    averages.append(avg)
+                                    center = np.median(col_values) if use_median else (sum(col_values) / len(col_values))
+                                    centers.append(center)
 
-                            # Write average line
+                            # Write center line (label stays "avg" for parsing;
+                            # the value is the median instead of the mean when use_median is set)
                             avg_line = "avg"
-                            for avg in averages:
-                                avg_line += f" {avg:.2f}"
+                            for center in centers:
+                                avg_line += f" {center:.2f}"
                             f.write(avg_line + "\n")
 
                 data_summary[target_name][fuzzer_name] = len(campaign_data)
@@ -241,7 +274,7 @@ def set_ylim_with_margin(ax, all_values):
     ax.set_ylim(min_val - bottom_margin, max_val + top_margin)
 
 
-def plot_branch_graphs(graph_dir, data_dir, interval, log_x=False):
+def plot_branch_graphs(graph_dir, data_dir, interval, log_x=False, use_median=False, only_average=False):
     """
     Generate branch hit count graphs from data files.
 
@@ -271,6 +304,8 @@ def plot_branch_graphs(graph_dir, data_dir, interval, log_x=False):
         return
 
     print(f"Generating {len(data_files)} graphs...")
+
+    center_label = 'median' if use_median else 'avg'
 
     for data_file in data_files:
         # Extract target and fuzzer from filename
@@ -331,21 +366,23 @@ def plot_branch_graphs(graph_dir, data_dir, interval, log_x=False):
 
         # Collect all values to determine Y-axis range
         all_values = []
-        for values in campaign_data.values():
-            all_values.extend(values[:num_points])
+        if not only_average:
+            for values in campaign_data.values():
+                all_values.extend(values[:num_points])
         if avg_data:
             all_values.extend(avg_data)
 
         # Plot each campaign in blue
-        for campaign_num in sorted(campaign_data.keys(), key=lambda x: int(x)):
-            values = campaign_data[campaign_num]
-            # Use only as many values as we have time points
-            if len(values) >= num_points:
-                ax.plot(time_points, values[:num_points], color='blue', alpha=0.3, linewidth=1.5, marker='o', markersize=2)
+        if not only_average:
+            for campaign_num in sorted(campaign_data.keys(), key=lambda x: int(x)):
+                values = campaign_data[campaign_num]
+                # Use only as many values as we have time points
+                if len(values) >= num_points:
+                    ax.plot(time_points, values[:num_points], color='blue', alpha=0.3, linewidth=1.5, marker='o', markersize=2)
 
         # Plot average in red
         if avg_data:
-            ax.plot(time_points, avg_data, color='red', linewidth=2, label='avg', marker='o', markersize=2.5)
+            ax.plot(time_points, avg_data, color='red', linewidth=2, label=center_label, marker='o', markersize=2.5)
 
         # Set Y-axis range: fixed bottom margin, top margin scaled to max_val
         set_ylim_with_margin(ax, all_values)
@@ -365,9 +402,13 @@ def plot_branch_graphs(graph_dir, data_dir, interval, log_x=False):
         ax.grid(True, alpha=0.3)
 
         # Add legend
-        blue_line = plt.Line2D([0], [0], color='blue', linewidth=1)
-        red_line = plt.Line2D([0], [0], color='red', linewidth=2)
-        ax.legend([blue_line, red_line], ['each campaign', 'avg'], loc='best')
+        if only_average:
+            red_line = plt.Line2D([0], [0], color='red', linewidth=2)
+            ax.legend([red_line], [center_label], loc='best')
+        else:
+            blue_line = plt.Line2D([0], [0], color='blue', linewidth=1)
+            red_line = plt.Line2D([0], [0], color='red', linewidth=2)
+            ax.legend([blue_line, red_line], ['each campaign', center_label], loc='best')
 
         # Save figure
         output_filename = f"{target_name}_{fuzzer_name}_branch_graph.png"
@@ -380,10 +421,10 @@ def plot_branch_graphs(graph_dir, data_dir, interval, log_x=False):
         print(f"✓ Created: {output_filename}")
 
 
-def plot_comparison_graphs(graph_dir, data_dir, interval, log_x=False):
+def plot_comparison_graphs(graph_dir, data_dir, interval, log_x=False, use_median=False, only_average=False):
     """
     Generate comparison graphs for targets with multiple fuzzers.
-    Shows avg lines with min/max ranges from different fuzzers for the same target.
+    Shows avg lines with bootstrap 95% CI bands from different fuzzers for the same target.
 
     Args:
         graph_dir: Path to graph directory (output location)
@@ -450,25 +491,30 @@ def plot_comparison_graphs(graph_dir, data_dir, interval, log_x=False):
         num_points = len(avg_data)
         time_points = [i * interval / 60 for i in range(num_points)]
 
-        # Calculate min and max values for each time point
-        max_data = []
-        min_data = []
-        for col_idx in range(num_points):
-            col_values = [data[col_idx] for data in campaign_data.values() if col_idx < len(data)]
-            if col_values:
-                max_data.append(max(col_values))
-                min_data.append(min(col_values))
-            else:
-                max_data.append(avg_data[col_idx])
-                min_data.append(avg_data[col_idx])
+        # Calculate bootstrap 95% CI of the mean for each time point
+        ci_upper = []
+        ci_lower = []
+        if only_average:
+            ci_lower = list(avg_data)
+            ci_upper = list(avg_data)
+        else:
+            for col_idx in range(num_points):
+                col_values = [data[col_idx] for data in campaign_data.values() if col_idx < len(data)]
+                if col_values:
+                    lower, upper = bootstrap_ci(col_values, statistic='median' if use_median else 'mean')
+                    ci_lower.append(lower)
+                    ci_upper.append(upper)
+                else:
+                    ci_lower.append(avg_data[col_idx])
+                    ci_upper.append(avg_data[col_idx])
 
         # Store data
         if target_name not in target_fuzzers:
             target_fuzzers[target_name] = {}
         target_fuzzers[target_name][fuzzer_name] = {
             'avg': avg_data,
-            'max': max_data,
-            'min': min_data,
+            'ci_upper': ci_upper,
+            'ci_lower': ci_lower,
             'time_points': time_points
         }
 
@@ -488,22 +534,23 @@ def plot_comparison_graphs(graph_dir, data_dir, interval, log_x=False):
         all_values = []
         for fuzzer_name in sorted(fuzzers_data.keys()):
             data = fuzzers_data[fuzzer_name]
-            all_values.extend(data['max'])
-            all_values.extend(data['min'])
+            all_values.extend(data['ci_upper'])
+            all_values.extend(data['ci_lower'])
 
         # Plot each fuzzer's data in different colors
         colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'pink', 'gray']
         for idx, fuzzer_name in enumerate(sorted(fuzzers_data.keys())):
             data = fuzzers_data[fuzzer_name]
             avg_data = data['avg']
-            max_data = data['max']
-            min_data = data['min']
+            ci_upper = data['ci_upper']
+            ci_lower = data['ci_lower']
             time_points = data['time_points']
 
             color = colors[idx % len(colors)]
 
-            # Fill between max and min with light color
-            ax.fill_between(time_points, min_data, max_data, color=color, alpha=0.15)
+            # Fill the bootstrap 95% CI band with light color
+            if not only_average:
+                ax.fill_between(time_points, ci_lower, ci_upper, color=color, alpha=0.15)
 
             # Plot average line
             ax.plot(time_points, avg_data, color=color, linewidth=2, label=fuzzer_name, marker='o', markersize=2.5)
@@ -658,11 +705,18 @@ def main():
                         help='Use log scale on the x-axis')
     parser.add_argument('--per-trial', action='store_true',
                         help='Generate per-trial comparison graphs (one graph per target+trial)')
+    parser.add_argument('--median', action='store_true',
+                        help='Use median instead of mean for the main line and CI band')
+    parser.add_argument('--only-average', action='store_true',
+                        help='Plot only the average/median line, without per-campaign lines, '
+                             'confidence interval bands, or per-trial comparison graphs')
 
     args = parser.parse_args()
     workdir = Path(args.workdir).resolve()
     interval = args.interval
     log_x = args.log_x
+    use_median = args.median
+    only_average = args.only_average
 
     if not check_coverage_directory(workdir):
         sys.exit(1)
@@ -671,7 +725,7 @@ def main():
 
     coverage_dir = workdir / 'coverage'
     print(f"\nCollecting branch hit count data...")
-    data_summary, files_created = collect_and_save_branch_data(workdir, coverage_dir, data_dir)
+    data_summary, files_created = collect_and_save_branch_data(workdir, coverage_dir, data_dir, use_median)
 
     print(f"\n✓ Created {files_created} data files")
     if data_summary:
@@ -682,12 +736,12 @@ def main():
                 print(f"    - {fuzzer}: {count} campaigns")
 
     print(f"\nGenerating graphs...")
-    plot_branch_graphs(graph_dir, data_dir, interval, log_x)
+    plot_branch_graphs(graph_dir, data_dir, interval, log_x, use_median, only_average)
 
     print(f"\nGenerating comparison graphs...")
-    plot_comparison_graphs(graph_dir, data_dir, interval, log_x)
+    plot_comparison_graphs(graph_dir, data_dir, interval, log_x, use_median, only_average)
 
-    if args.per_trial:
+    if args.per_trial and not only_average:
         print(f"\nGenerating per-trial comparison graphs...")
         plot_per_trial_comparison_graphs(graph_dir, data_dir, interval, log_x)
 
