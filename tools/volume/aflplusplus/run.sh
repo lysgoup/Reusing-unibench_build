@@ -2,12 +2,22 @@
 
 ##
 # Pre-requirements:
-# - env TARGET: target name (e.g., exiv2)
+# - env TARGET: target name (e.g., tiffsplit)
 # - env SEED: path to seed directory
 # - env SHARED: path to shared directory (to store results)
 # - env ARGS: extra arguments to pass to the program
 # - env FUZZARGS: extra arguments to pass to the fuzzer
 ##
+#
+# Plain aflplusplus -- shares the exact same image/binary as ../aflplusplus-
+# reusing (see tools/build.sh's "aflplusplus" case, which just re-tags the
+# aflplusplus-reusing image instead of building anything separately), the
+# same relationship angora has to angora-reusing: one build, runtime flags
+# decide the behavior. The only difference from aflplusplus-reusing/run.sh
+# is that AFL_DTAINT_BINARY is never set here, so taint tracking's
+# save_if_interesting() hook (src/afl-fuzz-bitmap.c, AFLplusplus_reusing)
+# never fires -- this runs as plain coverage-guided AFL++, no dtaint
+# companion process at all.
 
 # Validate required environment variables
 if [ -z "$TARGET" ]; then
@@ -40,14 +50,14 @@ export AFL_DRIVER_DONT_DEFER=1
 # Convert ARGS_STR back to array
 eval "ARGS=($ARGS_STR)"
 
-# Determine binary paths based on TARGET
-# Binaries are expected in /unibench/{target}/fuzzer/{fast,track}
-TARGET_BIN="/d/p/aflplusplus/${TARGET}"
+# Same image as aflplusplus-reusing, so the fast binary lives at the same
+# path -- only the dtaint/ binary (and AFL_DTAINT_BINARY) is deliberately
+# not used here.
+FAST_BIN="/d/p/aflplusplus-reusing/fast/${TARGET}"
 OUTPUT_DIR="$SHARED/findings"
 
-# Check if binaries exist
-if [ ! -f "$TARGET_BIN" ]; then
-    echo "Error: target binary not found at $TARGET_BIN"
+if [ ! -f "$FAST_BIN" ]; then
+    echo "Error: Fast (main) binary not found at $FAST_BIN"
     exit 1
 fi
 
@@ -56,6 +66,5 @@ if [ ! -d "$SEED" ]; then
     exit 1
 fi
 
-# Run aflplusplus
-"/aflplusplus/afl-fuzz" -i "$SEED" -o "$OUTPUT_DIR" -d $FUZZARGS -- "$TARGET_BIN" $ARGS 2>&1
-
+# Run aflplusplus -- no AFL_DTAINT_BINARY set, so taint tracking stays off.
+afl-fuzz -i "$SEED" -o "$OUTPUT_DIR" -d $FUZZARGS -- "$FAST_BIN" "${ARGS[@]}" 2>&1
