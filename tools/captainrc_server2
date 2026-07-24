@@ -7,24 +7,24 @@
 ###
 
 # WORKDIR: path to directory where shared volumes will be created
-WORKDIR=../_original
+WORKDIR=../_new_mutation_storfuzz
 
 # REPEAT: number of campaigns to run per program (per fuzzer)
 REPEAT=5
 
 # [WORKER_POOL]: a space-separated list of logical cores to allocate
-WORKER_POOL="$(seq 70 110)"
+WORKER_POOL="$(seq 95 111)"
 
 # [GLOBAL_FUZZARGS]: extra arguments passed to all fuzzers regardless of fuzzer/target
 GLOBAL_FUZZARGS="--analysis-mode"
 
 # FUZZERS: an array of fuzzer names (from magma/fuzzers/*) to evaluate
-FUZZERS=(angora-reusing)
+FUZZERS=(angora-storfuzz)
 
 # [fuzzer_TARGETS]: an array of target names (from magma/targets/*) to fuzz with
 angora_original_TARGETS=(exiv2 tiffsplit)
-angora_TARGETS=(exiv2 tiffsplit)
-angora_reusing_TARGETS=(tiffsplit)
+angora_storfuzz_TARGETS=(imginfo)
+angora_reusing_TARGETS=(sqlite3)
 
 # [target_SEED]: single seed directory applied to all trials
 exiv2_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/angora/exiv2/saturated_seed
@@ -39,6 +39,7 @@ tiffsplit_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/an
 jq_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/angora/jq/saturated_seed
 imginfo_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/angora/imginfo/saturated_seed
 mujs_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/angora/mujs/saturated_seed
+sqlite3_SEED=/home/yunseo/Reusing_mut/Reusing-unibench_build/_saturation/ar/angora/sqlite3/saturated_seed
 
 
 # [target_SEEDS]: per-trial seed directories (array). SEEDS[i] is used for trial i.
