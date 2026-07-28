@@ -19,7 +19,7 @@
 #   tools/measure_coverage.sh
 #
 # Usage:
-#   $0 WORKDIR INTERVAL MAX_ITERATIONS [--measure]
+#   $0 WORKDIR INTERVAL MAX_ITERATIONS [--measure] [--dryrun]
 #     WORKDIR:        path to work directory (same as run.sh WORKDIR)
 #     INTERVAL:       MINUTES between queue snapshots (consistent with plot_coverage.py)
 #     MAX_ITERATIONS: number of snapshots, i.e. campaign length = INTERVAL*MAX minutes
@@ -27,15 +27,20 @@
 #                     coverage measurement + visualization (measure_coverage.sh).
 #                     DEFAULT (flag absent) = archiving only; measure later, on demand:
 #                         tools/measure_coverage.sh WORKDIR INTERVAL
+#     --dryrun:       (optional) stop each campaign's fuzzer container the moment
+#                     its dryrun_finish signal appears, instead of waiting for
+#                     MAX_ITERATIONS. Useful for smoke-testing a build/target.
 #
 # Example: 5 days at 15-minute snapshots = 15 * 480 minutes -> `$0 WORKDIR 15 480`
 ##
 
 MEASURE_ON_FINISH=0
+DRYRUN_MODE=0
 POSITIONAL=()
 for a in "$@"; do
     case "$a" in
         --measure|--measure-on-finish) MEASURE_ON_FINISH=1 ;;
+        --dryrun) DRYRUN_MODE=1 ;;
         -h|--help) POSITIONAL=() ; break ;;
         *) POSITIONAL+=("$a") ;;
     esac
@@ -43,12 +48,14 @@ done
 set -- "${POSITIONAL[@]}"
 
 if [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ]; then
-    echo "Usage: $0 WORKDIR INTERVAL MAX_ITERATIONS [--measure]"
+    echo "Usage: $0 WORKDIR INTERVAL MAX_ITERATIONS [--measure] [--dryrun]"
     echo "  WORKDIR:        path to work directory (required)"
     echo "  INTERVAL:       queue snapshot interval in MINUTES (required)"
     echo "  MAX_ITERATIONS: number of snapshots; campaign length = INTERVAL*MAX minutes (required)"
     echo "  --measure:      (optional) measure coverage + plot after all campaigns finish"
     echo "                  (default: archive only; measure later with measure_coverage.sh)"
+    echo "  --dryrun:       (optional) stop each campaign as soon as its dryrun_finish"
+    echo "                  signal appears, instead of waiting for MAX_ITERATIONS"
     exit 1
 fi
 
@@ -121,6 +128,23 @@ start_archiver() {
     echo_time "Archiver started for $key (PID: ${ARCHIVE_PIDS[$key]})"
 }
 
+# Identify the fuzzer container by its /unibench_shared mount and SIGINT it.
+stop_fuzzer_container() {
+    local FUZZER=$1 TARGET=$2 CACHECID=$3
+    local cache_path="$CACHEDIR/$FUZZER/$TARGET/$CACHECID"
+    local fuzzer_container
+    fuzzer_container=$( { docker ps -q | xargs -r -I{} docker inspect {} \
+        --format '{{.Id}} {{range .Mounts}}{{.Source}}:{{.Destination}} {{end}}' \
+        2>/dev/null | grep -F "$cache_path:/unibench_shared" | awk '{print $1}'; } || true)
+
+    if [ -n "$fuzzer_container" ]; then
+        echo_time "Sending SIGINT to fuzzer container: ${fuzzer_container:0:12}"
+        docker kill --signal=INT "$fuzzer_container" 2>/dev/null || true
+    else
+        echo_time "WARNING: fuzzer container not found for ${FUZZER}::${TARGET}::${CACHECID} (campaign may already have exited)"
+    fi
+}
+
 # On archive_done, SIGINT the matching fuzzer container (fixed-duration stop).
 maybe_stop_fuzzer() {
     local FUZZER=$1 TARGET=$2 CACHECID=$3
@@ -131,23 +155,30 @@ maybe_stop_fuzzer() {
     [ -z "${REPORTED_DONE[$key]+x}" ] || return
 
     echo_time "Archiving completed (max iterations): $key"
-    local cache_path="$CACHEDIR/$FUZZER/$TARGET/$CACHECID"
-    # Identify the fuzzer container by its /unibench_shared mount (fixed-string grep).
-    local fuzzer_container
-    fuzzer_container=$( { docker ps -q | xargs -r -I{} docker inspect {} \
-        --format '{{.Id}} {{range .Mounts}}{{.Source}}:{{.Destination}} {{end}}' \
-        2>/dev/null | grep -F "$cache_path:/unibench_shared" | awk '{print $1}'; } || true)
-
-    if [ -n "$fuzzer_container" ]; then
-        echo_time "Sending SIGINT to fuzzer container: ${fuzzer_container:0:12}"
-        docker kill --signal=INT "$fuzzer_container" 2>/dev/null || true
-    else
-        echo_time "WARNING: fuzzer container not found for $key (campaign may already have exited)"
-    fi
+    stop_fuzzer_container "$FUZZER" "$TARGET" "$CACHECID"
     REPORTED_DONE[$key]=1
 }
 
-echo_time "Archiving-only driver started (interval=${INTERVAL}min, max_iterations=${MAX_ITERATIONS})"
+# --dryrun mode: SIGINT the fuzzer container the moment its dryrun_finish
+# signal appears (angora's Depot::signal_dir = findings/[default/]queue/signal),
+# instead of waiting for archive_queue.sh to reach MAX_ITERATIONS.
+maybe_stop_on_dryrun() {
+    local FUZZER=$1 TARGET=$2 CACHECID=$3
+    local key="${FUZZER}::${TARGET}::${CACHECID}"
+    local cache_dir="$CACHEDIR/$FUZZER/$TARGET/$CACHECID"
+
+    [ -z "${REPORTED_DONE[$key]+x}" ] || return
+    if [ ! -f "$cache_dir/findings/queue/signal/dryrun_finish" ] && \
+       [ ! -f "$cache_dir/findings/default/queue/signal/dryrun_finish" ]; then
+        return
+    fi
+
+    echo_time "dryrun_finish detected: $key"
+    stop_fuzzer_container "$FUZZER" "$TARGET" "$CACHECID"
+    REPORTED_DONE[$key]=1
+}
+
+echo_time "Archiving-only driver started (interval=${INTERVAL}min, max_iterations=${MAX_ITERATIONS}, dryrun=${DRYRUN_MODE})"
 echo_time "Watching $CACHEDIR ; snapshots -> $COVERAGEDIR/<fuzzer>/<target>/<id>/archives"
 
 while true; do
@@ -169,8 +200,13 @@ while true; do
                     # Only act on a populated campaign directory.
                     if [ -n "$(ls -A "$cache_dir" 2>/dev/null)" ]; then
                         start_archiver "$FUZZER" "$TARGET" "$CACHECID"
+                        [ "$DRYRUN_MODE" -eq 1 ] && maybe_stop_on_dryrun "$FUZZER" "$TARGET" "$CACHECID"
                         maybe_stop_fuzzer "$FUZZER" "$TARGET" "$CACHECID"
-                        if [ ! -f "$COVERAGEDIR/$FUZZER/$TARGET/$CACHECID/archives/archive_done" ]; then
+                        # "done" = we've already told this campaign's container to stop
+                        # (either archive_done reached, or -- in --dryrun mode --
+                        # dryrun_finish reached). Both paths set REPORTED_DONE.
+                        key="${FUZZER}::${TARGET}::${CACHECID}"
+                        if [ -z "${REPORTED_DONE[$key]+x}" ]; then
                             all_done=0
                         fi
                     else
