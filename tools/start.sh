@@ -38,6 +38,23 @@ if [ -z $TIMEOUT ]; then
     echo_time "Note: TIMEOUT not specified, container will run until manually stopped"
 fi
 
+# DRYRUN is optional - if set, stop the container as soon as its dry-run
+# (initial seed-processing) phase finishes, instead of waiting for TIMEOUT.
+# Useful for smoke-testing a build/target.
+watch_dryrun() {
+    local container_id=$1
+    local shared=$2
+    while docker inspect -f '{{.State.Running}}' "$container_id" &>/dev/null; do
+        if [ -f "$shared/findings/queue/signal/dryrun_finish" ] || \
+           [ -f "$shared/findings/default/queue/signal/dryrun_finish" ]; then
+            echo_time "dryrun_finish detected, stopping container $container_id"
+            docker kill --signal=INT "$container_id" &>/dev/null
+            break
+        fi
+        sleep 3
+    done
+}
+
 IMG_NAME="unifuzz/unibench:$FUZZER"
 
 if [ ! -z $AFFINITY ]; then
@@ -102,6 +119,9 @@ else
     container_id=$(cut -c-12 <<< $container_id)
     echo_time "Container for $FUZZER/$TARGET started in $container_id"
     docker logs -f "$container_id" &
+    if [ "${DRYRUN:-0}" = 1 ]; then
+        watch_dryrun "$container_id" "$SHARED" &
+    fi
     exit_code=$(docker wait $container_id)
     exit $exit_code
 fi

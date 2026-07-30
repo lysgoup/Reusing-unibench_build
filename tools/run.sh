@@ -36,6 +36,9 @@ export CAMPAIGN_WORKERS=${CAMPAIGN_WORKERS:-1}
 export POLL=${POLL:-5}
 # TIMEOUT is optional - if not specified, campaigns run indefinitely until user stops
 export TIMEOUT="${TIMEOUT}"
+# DRYRUN is optional - if set to 1, each campaign stops as soon as its dry-run
+# (initial seed-processing) phase finishes, instead of waiting for TIMEOUT.
+export DRYRUN="${DRYRUN:-0}"
 
 if [ -z "$TIMEOUT" ]; then
     echo_time "WARNING: TIMEOUT not specified in captainrc"
