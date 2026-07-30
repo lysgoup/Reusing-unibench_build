@@ -96,12 +96,11 @@ RUN cd /unibench/libpcap-1.8.1 && ./configure --disable-shared &&\
     make -j &&\
     cp tcpdump /d/p/cov/
 
-RUN rm -r /unibench/ffmpeg-4.0.1 &&\
-    wget --quiet https://gitlab.com/unifuzz/unibench_build/raw/master/ffmpeg/coverage.tar.gz &&\
-    tar xf coverage.tar.gz -C / &&\
-    rm coverage.tar.gz &&\
-    cp /unibench/ffmpeg-4.0.1/ffmpeg_g /d/p/cov/ffmpeg
-
+RUN apt update && apt install -y nasm &&\
+    cd /unibench/ffmpeg-4.0.1 && ./configure --disable-shared --cc="$CC" --cxx="$CXX" &&\
+    make -j &&\
+    cp ffmpeg_g /d/p/cov/ffmpeg
+    
 RUN ls -alh /d/p/*
 
 # Install lcov and genhtml for coverage measurement

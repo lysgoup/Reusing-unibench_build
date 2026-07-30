@@ -38,13 +38,6 @@ RUN cd /unibench/exiv2-0.26 && export ANGORA_PASS_LOG_DIR=$(pwd) && cmake -DEXIV
     make clean && ANGORA_USE_STORFUZZ=1 USE_FAST=1 make -j && cp bin/exiv2 /d/p/angora/fast_storfuzz/ && make clean && USE_TRACK=1 make -j && cp bin/exiv2 /d/p/angora/taint/ &&\
     make clean
 
-# RUN cd /unibench/gdk-pixbuf-2.31.1 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
-#     ./autogen.sh --enable-static=yes --enable-shared=no --with-included-loaders=yes && make -j &&\
-#     cp gdk-pixbuf/gdk-pixbuf-pixdata /d/p/angora/fast/ &&\
-#     make clean && USE_TRACK=1 make -j &&\
-#     cp gdk-pixbuf/gdk-pixbuf-pixdata /d/p/angora/taint/ &&\
-#     make clean
-
 RUN cd /unibench/gdk-pixbuf-2.31.1 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     ./autogen.sh --enable-static=yes --enable-shared=no --with-included-loaders=yes && make -j &&\
     cp gdk-pixbuf/gdk-pixbuf-pixdata /d/p/angora/fast/ &&\
@@ -84,15 +77,6 @@ RUN cd /unibench/mp3gain-1.5.2 && export ANGORA_PASS_LOG_DIR=$(pwd) && sed -i 's
     make clean && ANGORA_USE_STORFUZZ=1 USE_FAST=1 make -j && cp mp3gain /d/p/angora/fast_storfuzz/ && make clean && USE_TRACK=1 make -j &&\
     cp mp3gain /d/p/angora/taint/ &&\
     make clean
-
-# RUN cd /unibench/swftools-0.9.2/ && ./configure &&\
-#     sed -i 's/int inline ActionTagSize/int ActionTagSize/' ./lib/modules/swfaction.c &&\
-#     sed -i 's/byte inline PaethPredictor/byte PaethPredictor/' ./src/png2swf.c &&\
-#     make -j &&\
-#     cp src/wav2swf /d/p/angora/fast/ &&\
-#     make clean && USE_TRACK=1 make -j &&\
-#     cp src/wav2swf /d/p/angora/taint/ &&\
-#     make clean
 
 RUN cd /unibench/swftools-0.9.2/ && \
     export ANGORA_PASS_LOG_DIR=$(pwd) && \
@@ -181,20 +165,6 @@ RUN cd /unibench/SQLite-3.8.9 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./configur
     cp sqlite3 /d/p/angora/taint/ &&\
     make clean
 
-# RUN cd /unibench/binutils-5279478 &&\
-#     ./configure --disable-shared &&\
-#     for i in bfd libiberty opcodes libctf; do cd $i; ./configure --disable-shared && make -j; cd ..; done  &&\
-#     cd binutils  &&\
-#     ./configure --disable-shared &&\
-#     make nm-new &&\
-#     cp nm-new /d/p/angora/fast/nm &&\
-#     cd /unibench/binutils-5279478 &&\
-#     for i in bfd libiberty opcodes libctf; do cd $i; make clean && USE_TRACK=1 make -j; cd ..; done  &&\
-#     cd binutils  && make clean &&\
-#     USE_TRACK=1 make nm-new &&\
-#     cp nm-new /d/p/angora/taint/nm &&\
-#     cd .. && make distclean
-
 RUN cd /unibench/binutils-5279478 && export ANGORA_PASS_LOG_DIR=$(pwd) && \
     MAKEINFO=true ./configure \
       --disable-shared \
@@ -268,12 +238,30 @@ RUN cd /unibench/libpcap-1.8.1 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./configu
     cp tcpdump /d/p/angora/taint/ &&\
     make clean && cd /unibench/libpcap-1.8.1 && make clean
 
-# this will add /d/p/angora/fast/ffmpeg and /d/p/angora/taint/ffmpeg
-# NOTE: ffmpeg is a PREBUILT tarball (no source available here), so it cannot be StorFuzz-instrumented.
-#       There is intentionally NO /d/p/angora/fast_storfuzz/ffmpeg (skipped).
-RUN wget --quiet https://gitlab.com/unifuzz/unibench_build/raw/master/ffmpeg/angora.tar.gz &&\
-    tar xf angora.tar.gz -C / &&\
-    rm angora.tar.gz
+COPY Reusing-unibench_build/ffmpeg/abilist.txt /tmp/ffmpeg_abilist.txt
+
+RUN cat /tmp/abilist.txt /tmp/ffmpeg_abilist.txt | tr -d '\r' > /tmp/abilist_ffmpeg.txt &&\
+    export ANGORA_TAINT_RULE_LIST=/tmp/abilist_ffmpeg.txt &&\
+    cd /unibench/ffmpeg-4.0.1 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
+    ./configure --disable-doc --disable-shared --cc="$CC" --cxx="$CXX" &&\
+    rm -f cmpid_fast.txt cmpid_track.txt &&\
+    make -j$(nproc) &&\
+    test -s cmpid_fast.txt &&\
+    cp ffmpeg_g /d/p/angora/fast/ffmpeg &&\
+    make clean
+
+RUN cd /unibench/ffmpeg-4.0.1 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
+    export ANGORA_TAINT_RULE_LIST=/tmp/abilist_ffmpeg.txt &&\
+    ANGORA_USE_STORFUZZ=1 USE_FAST=1 make -j$(nproc) &&\
+    cp ffmpeg_g /d/p/angora/fast_storfuzz/ffmpeg &&\
+    make clean
+
+RUN cd /unibench/ffmpeg-4.0.1 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
+    export ANGORA_TAINT_RULE_LIST=/tmp/abilist_ffmpeg.txt &&\
+    USE_TRACK=1 make -j$(nproc) &&\
+    test -s cmpid_track.txt &&\
+    cp ffmpeg_g /d/p/angora/taint/ffmpeg &&\
+    make clean
 
 RUN cd /unibench/jasper-2.0.12 && export ANGORA_PASS_LOG_DIR=$(pwd) && cmake -DJAS_ENABLE_SHARED=OFF -DALLOW_IN_SOURCE_BUILD=ON . &&\
     make -j &&\
