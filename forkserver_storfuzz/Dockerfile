@@ -70,7 +70,7 @@ RUN git clone https://github.com/UNIFUZZ/unibench && \
     mv SQLite-8a8ffc86 SQLite-3.8.9 && mv binutils_5279478 binutils-5279478 && mv libtiff-Release-v3-9-7 libtiff-3.9.7 && \
     ls -alh
 
-COPY Reusing-unibench_build/tools/seeds /root/projects/seed_corpus
+COPY Reusing-unibench_build/tools/volume/seeds /root/projects/seed_corpus
 ENV LIBAFL_CC=/StorFuzz/fuzzers/forkserver_libafl_cc/target/release/libafl_cc
 ENV LIBAFL_CXX=/StorFuzz/fuzzers/forkserver_libafl_cc/target/release/libafl_cxx
 ENV FUZZER=/StorFuzz/fuzzers/forkserver_libafl_cc/target/release/forkserver_libafl_cc
@@ -144,21 +144,7 @@ RUN apt-get install -y tcl-dev && \
     cd $TARGET_DIR/SQLite-3.8.9 && ./configure CC=$LIBAFL_CC --disable-shared --disable-amalgamation && \
     make CC=$LIBAFL_CC -j && \
     cp sqlite3 /root/projects/targets/
-# libpng (libpng_read_fuzzer)
-COPY Reusing-unibench_build/angora-reusing/libfuzz-harness-proxy.c /tmp/libfuzz-harness-proxy.c
-RUN git clone --depth=1 --branch v1.6.51 https://github.com/pnggroup/libpng.git /tmp/libpng && \
-    cd /tmp/libpng && \
-    autoreconf -fi && \
-    CC=$LIBAFL_CC CXX=$LIBAFL_CXX ./configure --disable-shared && \
-    make -j$(nproc) && \
-    $LIBAFL_CXX -std=c++11 -O2 -I/tmp/libpng \
-      -c contrib/oss-fuzz/libpng_read_fuzzer.cc \
-      -o /tmp/fuzzer.o && \
-    $LIBAFL_CC -O2 -c /tmp/libfuzz-harness-proxy.c -o /tmp/proxy.o && \
-    $LIBAFL_CXX /tmp/fuzzer.o /tmp/proxy.o \
-      .libs/libpng16.a -lz \
-      -o /root/projects/targets/libpng_read_fuzzer && \
-    rm -rf /tmp/libpng /tmp/libfuzz-harness-proxy.c
+
 # ----- Target compile end ------
 
 # Allow non-root users (container runs as host uid) to access /root/
