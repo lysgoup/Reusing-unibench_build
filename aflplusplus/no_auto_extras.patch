@@ -1,0 +1,77 @@
+diff --git a/include/afl-fuzz.h b/include/afl-fuzz.h
+index e465d838..310756f7 100644
+--- a/include/afl-fuzz.h
++++ b/include/afl-fuzz.h
+@@ -576,7 +576,8 @@ typedef struct afl_env_vars {
+       afl_post_process_keep_original, afl_crashing_seeds_as_new_crash,
+       afl_final_sync, afl_ignore_seed_problems, afl_disable_redundant,
+       afl_sha1_filenames, afl_no_sync, afl_no_fastresume, afl_force_fastresume,
+-      afl_forksrv_uid_set, afl_forksrv_gid_set, afl_frameshift_disabled;
++      afl_forksrv_uid_set, afl_forksrv_gid_set, afl_frameshift_disabled,
++      afl_no_auto_extras;
+ 
+   u16 afl_forksrv_nb_supl_gids;
+ 
+diff --git a/include/envs.h b/include/envs.h
+index 25da8211..8e7fbd3d 100644
+--- a/include/envs.h
++++ b/include/envs.h
+@@ -142,7 +142,8 @@ static char *afl_environment_variables[] = {
+     "AFL_USE_TSAN", "AFL_USE_CFISAN", "AFL_CFISAN_VERBOSE", "AFL_USE_LSAN",
+     "AFL_WINE_PATH", "AFL_NO_SNAPSHOT", "AFL_EXPAND_HAVOC_NOW", "AFL_USE_FASAN",
+     "AFL_USE_QASAN", "AFL_PRINT_FILENAMES", "AFL_PIZZA_MODE",
+-    "AFL_NO_FASTRESUME", "AFL_SAN_ABSTRACTION", "AFL_LLVM_ONLY_FSRV",
++    "AFL_NO_FASTRESUME", "AFL_NO_AUTO_EXTRAS", "AFL_SAN_ABSTRACTION",
++    "AFL_LLVM_ONLY_FSRV",
+     "AFL_GCC_ONLY_FRSV", "AFL_SAN_RECOVER",
+     "AFL_PRELOAD_DISCRIMINATE_FORKSERVER_PARENT", "AFL_FORKSRV_UID",
+     "AFL_FORKSRV_GID", "AFL_COMPILER_LAUNCHER", "AFL_FRAMESHIFT_DISABLE",
+diff --git a/src/afl-fuzz-extras.c b/src/afl-fuzz-extras.c
+index 2d18f01f..d7a302ed 100644
+--- a/src/afl-fuzz-extras.c
++++ b/src/afl-fuzz-extras.c
+@@ -621,6 +621,14 @@ void maybe_add_auto(afl_state_t *afl, u8 *mem, u32 len) {
+ 
+   if (!MAX_AUTO_EXTRAS || !USE_AUTO_EXTRAS) { return; }
+ 
++  /* Runtime opt-out (AFL_NO_AUTO_EXTRAS): same effect as the compile-time
++     kill switch above, without requiring a rebuild. Covers both live
++     collection (called from the bitflip/effector-map stage and from
++     redqueen) and resume-time reload (load_auto() below funnels through
++     here too), since this is the sole writer of afl->a_extras[]. */
++
++  if (afl->afl_env.afl_no_auto_extras) { return; }
++
+   /* Skip runs of identical bytes. */
+ 
+   for (i = 1; i < len; ++i) {
+diff --git a/src/afl-fuzz-state.c b/src/afl-fuzz-state.c
+index cf15534c..793359aa 100644
+--- a/src/afl-fuzz-state.c
++++ b/src/afl-fuzz-state.c
+@@ -321,6 +321,13 @@ void read_afl_environment(afl_state_t *afl, char **envp) {
+             afl->afl_env.afl_force_fastresume =
+                 get_afl_env(afl_environment_variables[i]) ? 1 : 0;
+ 
++          } else if (!strncmp(env, "AFL_NO_AUTO_EXTRAS",
++
++                              afl_environment_variable_len)) {
++
++            afl->afl_env.afl_no_auto_extras =
++                get_afl_env(afl_environment_variables[i]) ? 1 : 0;
++
+           } else if (!strncmp(env, "AFL_CUSTOM_MUTATOR_ONLY",
+ 
+                               afl_environment_variable_len)) {
+diff --git a/src/afl-fuzz.c b/src/afl-fuzz.c
+index 058488e4..8767d8aa 100644
+--- a/src/afl-fuzz.c
++++ b/src/afl-fuzz.c
+@@ -460,6 +460,7 @@ static void usage(u8 *argv0, int more_help) {
+       "AFL_TRY_AFFINITY: try to bind to an unused core, but don't fail if unsuccessful\n"
+       "AFL_NO_ARITH: skip arithmetic mutations in deterministic stage\n"
+       "AFL_NO_AUTODICT: do not load an offered auto dictionary compiled into a target\n"
++      "AFL_NO_AUTO_EXTRAS: do not collect or use auto-detected dictionary tokens (a_extras)\n"
+       "AFL_NO_CPU_RED: avoid red color for showing very high cpu usage\n"
+       "AFL_NO_FORKSRV: run target via execve instead of using the forkserver\n"
+       "AFL_NO_SNAPSHOT: do not use the snapshot feature (if the snapshot lkm is loaded)\n"

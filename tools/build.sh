@@ -36,28 +36,15 @@ sync_shared_tags() {
     done
 }
 
-# aflplusplus shares the exact same binary as aflplusplus-reusing (taint
-# tracking is simply left off at runtime -- see tools/volume/aflplusplus/run.sh,
-# which never sets AFL_DTAINT_BINARY). Whichever of the two is requested, make
-# sure the aflplusplus tag points at the current aflplusplus-reusing image, same
-# sync-on-every-build pattern as sync_shared_tags() above for angora.
-sync_aflplusplus_tag() {
-    local reusing_id current_id
-    reusing_id=$(docker images -q unifuzz/unibench:aflplusplus-reusing)
-    current_id=$(docker images -q unifuzz/unibench:aflplusplus)
-    if [ "$reusing_id" != "$current_id" ]; then
-        echo_time "Tagging unifuzz/unibench:aflplusplus to match aflplusplus-reusing ($reusing_id)."
-        docker tag unifuzz/unibench:aflplusplus-reusing unifuzz/unibench:aflplusplus
-    else
-        echo_time "unifuzz/unibench:aflplusplus already up to date."
-    fi
-}
+# NOTE: aflplusplus (plain, no taint tracking) used to share the
+# aflplusplus-reusing image (re-tagged at build time, same relationship
+# angora has to angora-reusing). It's now its own build: aflplusplus/
+# Dockerfile clones upstream AFL++ directly and applies a dryrun_finish.patch
+# (mirrors the marker file AFLplusplus_reusing/angora-reusing already emit),
+# so it just falls through to the default else-branch below like any other
+# $FUZZER directory with a Dockerfile.
 
-if [ "$FUZZER" = "aflplusplus" ]; then
-    echo_time "Smart build for aflplusplus (shares the aflplusplus-reusing image; taint tracking is simply left off at runtime -- see tools/volume/aflplusplus/run.sh, which never sets AFL_DTAINT_BINARY)"
-    FUZZER=aflplusplus-reusing "$UNIBENCH/tools/build.sh"
-    sync_aflplusplus_tag
-elif [ "$FUZZER" = "angora" ] || [ "$FUZZER" = "angora-storfuzz" ]; then
+if [ "$FUZZER" = "angora" ] || [ "$FUZZER" = "angora-storfuzz" ]; then
     echo_time "Smart build for $FUZZER (shares the angora-reusing image; syncing all shared tags)"
     FUZZER=angora-reusing "$UNIBENCH/tools/build.sh"
     sync_shared_tags
@@ -135,13 +122,32 @@ elif [ "$FUZZER" = "aflplusplus-reusing" ]; then
     # though not a single unibench target actually depends on afl-fuzz's
     # own source.
     #
+    # include/afl-fuzz.h joined the fuzzer-only list once the reusing-pool
+    # work started touching it regularly -- verified first, not assumed:
+    # `grep -rl "afl-fuzz\.h" instrumentation/` only turns up a mention in
+    # a .md doc comment, nothing instrumentation passes or the compiler-rt
+    # runtime actually #include, and this Dockerfile only ever `make
+    # afl-fuzz` (never afl-showmap/afl-tmin/custom_mutators, the other
+    # things in this repo that do include it) -- so nothing this pipeline
+    # builds for a *target* can ever see this header. If that ever stops
+    # being true (afl-fuzz.h starts declaring something instrumentation-
+    # side code needs), this needs to come back out.
+    #
+    # include/reusing_*.h (reusing_pool.h, reusing_pattern.h,
+    # reusing_filter.h, reusing_dtaint_reader.h) joined the same way, same
+    # verification: `grep -rl` for each header's own name across the whole
+    # repo turns up only src/afl-fuzz-reusing-*.c and afl-fuzz.h/afl-fuzz.c
+    # as includers -- nothing under instrumentation/ or elsewhere. Their
+    # src/afl-fuzz-reusing-*.c implementations already matched
+    # '^src/afl-fuzz' below without needing a separate entry.
+    #
     # TOOLCHAIN_HASH deliberately covers "everything except the fuzzer
     # files" (via git ls-files, so build artifacts/.git aren't included)
     # rather than trying to enumerate every toolchain-relevant path --
     # safer default is "unrecognized file changed -> full rebuild" than
     # risking a silently-stale target image.
-    FUZZER_FILE_LIST=$(cd "$AFLPP_REUSING_ROOT" && git ls-files | grep -E '^src/afl-fuzz|^src/afl-main\.c$')
-    TOOLCHAIN_FILE_LIST=$(cd "$AFLPP_REUSING_ROOT" && git ls-files | grep -vE '^src/afl-fuzz|^src/afl-main\.c$')
+    FUZZER_FILE_LIST=$(cd "$AFLPP_REUSING_ROOT" && git ls-files | grep -E '^src/afl-fuzz|^src/afl-main\.c$|^include/afl-fuzz\.h$|^include/reusing_')
+    TOOLCHAIN_FILE_LIST=$(cd "$AFLPP_REUSING_ROOT" && git ls-files | grep -vE '^src/afl-fuzz|^src/afl-main\.c$|^include/afl-fuzz\.h$|^include/reusing_')
     FUZZER_HASH=$(cd "$AFLPP_REUSING_ROOT" && echo "$FUZZER_FILE_LIST" | tar -cf - -T - 2>/dev/null | sha256sum | cut -d' ' -f1)
     TOOLCHAIN_HASH=$(cd "$AFLPP_REUSING_ROOT" && echo "$TOOLCHAIN_FILE_LIST" | tar -cf - -T - 2>/dev/null | sha256sum | cut -d' ' -f1)
 
@@ -178,7 +184,6 @@ elif [ "$FUZZER" = "aflplusplus-reusing" ]; then
     else
         echo_time "No changes detected. Skipping build."
     fi
-    sync_aflplusplus_tag
 else
     set -x
     docker build -t "$IMG_NAME" -f "$UNIBENCH/$FUZZER/Dockerfile" "$UNIBENCH/../"

@@ -1,4 +1,112 @@
-FROM yunseo/aflplusplus
+#
+# Build context: $UNIBENCH/../ (default else-branch in tools/build.sh), i.e.
+# COPY paths below need the Reusing-unibench_build/ prefix.
+#
+# Self-contained clone+patch build, mirroring forkserver_libafl/Dockerfile's
+# pattern: clone upstream AFL++ straight from GitHub inside the image (no
+# host checkout dependency), pin a commit for reproducibility, apply our
+# dryrun_finish.patch, then build. Base stage content (deps/LLVM/GCC
+# versions, build recipe) is copied from upstream's own Dockerfile
+# (AFLplusplus/Dockerfile) with `COPY . .` swapped for `git clone` + `git
+# apply` since we have no local source tree to COPY here.
+#
+FROM ubuntu:24.04 AS aflplusplus
+LABEL "maintainer"="AFL++ team <afl@aflplus.plus>"
+LABEL "about"="AFL++ docker container image (plain, no taint tracking)"
+
+ENV NO_CORESIGHT=1
+ENV NO_NYX=1
+ENV LLVM_VERSION=20
+ENV GCC_VERSION=11
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+ENV NO_ARCH_OPT=1
+ENV IS_DOCKER=1
+
+RUN apt-get update && apt-get full-upgrade -y && \
+    apt-get install -y --no-install-recommends wget ca-certificates apt-utils && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && \
+    apt-get -y install --no-install-recommends \
+    make cmake automake meson ninja-build bison flex \
+    git xz-utils bzip2 wget jupp nano bash-completion less vim joe ssh psmisc \
+    python3 python3-dev python3-pip python-is-python3 python3-venv \
+    libtool libtool-bin libglib2.0-dev \
+    apt-transport-https gnupg dialog \
+    gnuplot-nox libpixman-1-dev bc \
+    gcc-${GCC_VERSION} g++-${GCC_VERSION} gcc-${GCC_VERSION}-plugin-dev gdb lcov \
+    clang-${LLVM_VERSION} clang-tools-${LLVM_VERSION} libc++1-${LLVM_VERSION} \
+    libc++-${LLVM_VERSION}-dev libc++abi1-${LLVM_VERSION} libc++abi-${LLVM_VERSION}-dev \
+    libclang1-${LLVM_VERSION} libclang-${LLVM_VERSION}-dev \
+    libclang-common-${LLVM_VERSION}-dev libclang-rt-${LLVM_VERSION}-dev libclang-cpp${LLVM_VERSION} \
+    libclang-cpp${LLVM_VERSION}-dev liblld-${LLVM_VERSION} \
+    liblld-${LLVM_VERSION}-dev liblldb-${LLVM_VERSION} liblldb-${LLVM_VERSION}-dev \
+    libllvm${LLVM_VERSION} libomp-${LLVM_VERSION}-dev libomp5-${LLVM_VERSION} \
+    lld-${LLVM_VERSION} lldb-${LLVM_VERSION} llvm-${LLVM_VERSION} \
+    llvm-${LLVM_VERSION}-dev llvm-${LLVM_VERSION}-runtime llvm-${LLVM_VERSION}-tools \
+    gcc-${GCC_VERSION}-multilib gcc-multilib && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-${GCC_VERSION} 0 && \
+    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-${GCC_VERSION} 0 && \
+    update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++-${GCC_VERSION} 0 && \
+    update-alternatives --install /usr/bin/clang clang /usr/bin/clang-${LLVM_VERSION} 0 && \
+    update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-${LLVM_VERSION} 0
+
+RUN wget -qO- https://sh.rustup.rs | CARGO_HOME=/etc/cargo sh -s -- -y -q --no-modify-path
+ENV PATH=$PATH:/etc/cargo/bin
+
+RUN apt clean -y
+
+ENV LLVM_CONFIG=llvm-config-${LLVM_VERSION}
+ENV AFL_SKIP_CPUFREQ=1
+ENV AFL_TRY_AFFINITY=1
+ENV AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
+
+# Pinned to the same commit already validated locally in a plain checkout
+# (/home/yunseo/AFLplusplus) -- bump deliberately, not implicitly via `main`.
+ARG AFLPP_COMMIT=05507e1880dc6df997c19e01423444ef37c36846
+
+WORKDIR /AFLplusplus
+RUN git clone https://github.com/AFLplusplus/AFLplusplus.git . && \
+    git checkout ${AFLPP_COMMIT}
+
+# Adds a dryrun_finish marker at <out_dir>/queue/signal/dryrun_finish once
+# initial seed calibration (perform_dry_run) completes -- same marker
+# AFLplusplus_reusing's afl-fuzz.c and angora-reusing already emit, so
+# start.sh's watch_dryrun / archive_queue.sh's dryrun-wait work unmodified
+# against this fuzzer too.
+COPY Reusing-unibench_build/aflplusplus/dryrun_finish.patch /tmp/dryrun_finish.patch
+RUN git apply /tmp/dryrun_finish.patch && rm /tmp/dryrun_finish.patch
+
+# Adds a runtime AFL_NO_AUTO_EXTRAS toggle (mirrors AFL_NO_FASTRESUME's
+# existing pattern in afl-fuzz-state.c/afl-fuzz.h/envs.h): a single guard in
+# maybe_add_auto() (src/afl-fuzz-extras.c), the sole writer of
+# afl->a_extras[], so it kills both live collection (bitflip/effector-map
+# stage + redqueen) and resume-time reload (load_auto() funnels through the
+# same function) without touching the MAX_AUTO_EXTRAS/USE_AUTO_EXTRAS
+# compile-time constants. Applied after dryrun_finish.patch -- both touch
+# src/afl-fuzz.c but at disjoint locations (dry-run marker vs. help text),
+# verified to apply cleanly in this order.
+COPY Reusing-unibench_build/aflplusplus/no_auto_extras.patch /tmp/no_auto_extras.patch
+RUN git apply /tmp/no_auto_extras.patch && rm /tmp/no_auto_extras.patch
+
+ARG CC=gcc-$GCC_VERSION
+ARG CXX=g++-$GCC_VERSION
+
+RUN python3 -m venv .venv
+ENV PATH="/AFLplusplus/.venv/bin:$PATH"
+
+RUN sed -i.bak 's/^	-/	/g' GNUmakefile && \
+    make clean && make distrib && make install && \
+    mv GNUmakefile.bak GNUmakefile
+
+RUN echo "set encoding=utf-8" > /root/.vimrc && \
+    echo ". /etc/bash_completion" >> ~/.bashrc && \
+    echo 'alias joe="joe --wordwrap --joe_state -nobackup"' >> ~/.bashrc && \
+    echo "export PS1='"'[AFL++ \h] \w \$ '"'" >> ~/.bashrc
 
 ENV CC=afl-clang-fast
 ENV CXX=afl-clang-fast++
@@ -125,13 +233,12 @@ RUN rm -r /unibench/ffmpeg-4.0.1 &&\
     rm coverage.tar.gz &&\
     cp /unibench/ffmpeg-4.0.1/ffmpeg_g /d/p/aflplusplus/ffmpeg
 
-# Copy libpng build script
-COPY target/libpng /unibench/libpng
-
-# Build libpng for Angora
-RUN cd /unibench/libpng &&\
-    bash build_for_aflpp.sh &&\
-    cp afl-out/libpng_read_fuzzer /d/p/aflplusplus/libpng_read_fuzzer
+# libpng intentionally skipped: no working build_for_aflpp.sh exists anywhere
+# in this tree (the old `COPY target/libpng` here pointed at a path that
+# doesn't exist in the build context), and aflplusplus-reusing-target/
+# Dockerfile skips it for the same reason ("libpng uses a custom
+# libFuzzer-harness build script" that was never written for AFL++). Revisit
+# by porting angora-reusing-target/Dockerfile's libpng recipe if needed.
 
 RUN ls -alh /d/p/*
 

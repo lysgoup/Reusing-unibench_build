@@ -79,4 +79,4 @@ export AFL_DTAINT_BINARY="$DTAINT_BIN"
 # Dockerfile (AFLplusplus_reusing) keeps the source tree at /AFLplusplus and
 # `make install`s it, so afl-fuzz is simply on PATH -- use that instead of
 # guessing the source-tree casing.
-afl-fuzz -i "$SEED" -o "$OUTPUT_DIR" -d $FUZZARGS -- "$FAST_BIN" "${ARGS[@]}" 2>&1
+afl-fuzz -i "$SEED" -o "$OUTPUT_DIR" $FUZZARGS -- "$FAST_BIN" "${ARGS[@]}" 2>&1
