@@ -58,7 +58,7 @@ if ls "$SRC"/iter_*.tar.gz >/dev/null 2>&1; then
     done < <(ls "$SRC"/iter_*.tar.gz | sort)
     if [ -d "$STAGE/findings" ]; then
         tar czf "$OUT_TMP" -C "$STAGE" --ignore-failed-read findings
-        n=$(tar tzf "$OUT_TMP" 2>/dev/null | grep -c '/id:')
+        n=$(tar tzf "$OUT_TMP" 2>/dev/null | grep -vc '/$')
     else
         echo "[make_base] WARNING: no findings/ under extracted archives in $SRC"
         tar czf "$OUT_TMP" -T /dev/null 2>/dev/null
@@ -67,8 +67,8 @@ if ls "$SRC"/iter_*.tar.gz >/dev/null 2>&1; then
     rm -rf "$STAGE"
 else
     # (2) seed-dir mode.
-    n=$(find "$SRC" -maxdepth 1 -name 'id:*' -type f 2>/dev/null | wc -l)
-    [ "$n" -gt 0 ] || echo "[make_base] WARNING: no 'id:*' files in $SRC (offline coverage only replays findings/queue/id:*)"
+    n=$(find "$SRC" -maxdepth 1 -type f ! -name '.*' 2>/dev/null | wc -l)
+    [ "$n" -gt 0 ] || echo "[make_base] WARNING: no corpus files in $SRC (offline coverage replays findings/queue/*, dotfiles excluded)"
     SRC_REAL="$(realpath "$SRC")"
     TMP="$(mktemp -d)"
     mkdir -p "$TMP/findings"
@@ -78,4 +78,4 @@ else
 fi
 
 mv -f "$OUT_TMP" "$OUT"
-echo "[make_base] $OUT  <-  $SRC  ($n id:* files)"
+echo "[make_base] $OUT  <-  $SRC  ($n corpus files)"

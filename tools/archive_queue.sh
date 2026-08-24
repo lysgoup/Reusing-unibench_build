@@ -146,7 +146,7 @@ if [ "$SATURATION" = 1 ] && [ ! -f "$BASE_MARKED" ]; then
             [ -n "$f" ] || continue
             nm="${f##*/}"
             if [ -z "${SEEN[$nm]+x}" ]; then SEEN[$nm]=1; printf '%s\n' "$nm" >> "$MANIFEST"; _pre=$((_pre+1)); fi
-        done < <(find "$_q" -maxdepth 1 -name 'id:*' -type f "${_pred[@]}" 2>/dev/null)
+        done < <(find "$_q" -maxdepth 1 -type f ! -name '.*' "${_pred[@]}" 2>/dev/null)
     fi
     : > "$BASE_MARKED"
     echo_ts "saturation: marked $_pre dry-run base files (boundary=dryrun_finish); post-signal discoveries kept as deltas"
@@ -168,7 +168,7 @@ while true; do
             [ -n "$f" ] || continue
             nm="${f##*/}"
             if [ -z "${SEEN[$nm]+x}" ]; then NEW_FILES+=("$f"); NEW_NAMES+=("$nm"); fi
-        done < <(find "$CURRENT_QUEUE_DIR" -maxdepth 1 -name 'id:*' -type f 2>/dev/null)
+        done < <(find "$CURRENT_QUEUE_DIR" -maxdepth 1 -type f ! -name '.*' 2>/dev/null)
     else
         echo_ts "iter $ITERATION: queue dir not found"
     fi
@@ -227,7 +227,7 @@ while true; do
             while IFS= read -r nm; do
                 [ -n "$nm" ] || continue
                 printf '%s\n' "$nm" >> "$MANIFEST"; SEEN[$nm]=1; _acc=$((_acc+1))
-            done < <(tar tzf "$ARCHIVE_PATH" 2>/dev/null | sed -n 's#.*/\(id:[^/]*\)$#\1#p')
+            done < <(tar tzf "$ARCHIVE_PATH" 2>/dev/null | sed -n 's#.*/##p')
         fi
         echo_ts "iter $ITERATION: done -> $ARCHIVE_PATH ($_acc/$NEW_FILE_COUNT archived, total accounted ${#SEEN[@]})"
     else
