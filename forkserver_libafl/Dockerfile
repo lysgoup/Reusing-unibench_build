@@ -133,9 +133,17 @@ RUN cd $TARGET_DIR/mp3gain-1.5.2 && sed -i 's/CC=/CC?=/' Makefile && \
     make CC=$LIBAFL_CC -j && \
     cp mp3gain /root/projects/targets/
 
-# flvmeta-1.2.1
-RUN cd $TARGET_DIR/flvmeta-1.2.1 && cmake . && \
+# libtiff-3.9.7 / tiffsplit
+RUN cd $TARGET_DIR/libtiff-3.9.7 && \
+    ./autogen.sh && \
+    CC=$LIBAFL_CC ./configure --disable-shared && \
     make CC=$LIBAFL_CC -j && \
+    cp tools/tiffsplit /root/projects/targets/
+
+# flvmeta-1.2.1
+RUN cd $TARGET_DIR/flvmeta-1.2.1 && \
+    cmake -DCMAKE_C_COMPILER=$LIBAFL_CC . && \
+    make -j && \
     cp src/flvmeta /root/projects/targets/
 
 # cflow-1.6
@@ -162,6 +170,78 @@ RUN apt-get install -y tcl-dev && \
     cd $TARGET_DIR/SQLite-3.8.9 && ./configure CC=$LIBAFL_CC --disable-shared --disable-amalgamation && \
     make CC=$LIBAFL_CC -j && \
     cp sqlite3 /root/projects/targets/
+
+# gdk-pixbuf-2.31.1: skipped -- its autogen.sh/autoreconf chain needs a
+# working autopoint (gettext) that this base image doesn't have; AUTOPOINT=true
+# and manually fetching config.rpath weren't enough to get past it. Revisit
+# separately if this target is needed.
+
+# jhead-3.00
+RUN cd $TARGET_DIR/jhead-3.00 && \
+    make CC=$LIBAFL_CC -j && \
+    cp jhead /root/projects/targets/
+
+# lame-3.99.5
+RUN cd $TARGET_DIR/lame-3.99.5 && \
+    CC=$LIBAFL_CC ./configure --disable-shared && \
+    make -j && \
+    cp frontend/lame /root/projects/targets/
+
+# swftools-0.9.2 / wav2swf: skipped -- needs a real source patch (not just
+# a warning-suppression flag) in its bundled xpdf copy (lib/pdf/xpdf/
+# GlobalParams.cc:925,927, pointer/int comparison), which would need the
+# identical patch on the angora side too for a fair comparison. Revisit
+# separately if this target is needed.
+
+# ncurses-6.1 / tic
+RUN cd $TARGET_DIR/ncurses-6.1 && \
+    CC=$LIBAFL_CC ./configure --disable-shared --without-cxx && \
+    make -j && \
+    cp progs/tic /root/projects/targets/
+
+# mujs-1.0.2
+RUN cd $TARGET_DIR/mujs-1.0.2 && \
+    CC=$LIBAFL_CC build=debug make -j && \
+    cp build/debug/mujs /root/projects/targets/
+
+# Bento4-1.5.1-628 / mp42aac
+RUN cd $TARGET_DIR/Bento4-1.5.1-628 && \
+    cmake -DCMAKE_C_COMPILER=$LIBAFL_CC -DCMAKE_CXX_COMPILER=$LIBAFL_CXX . && \
+    make -j && \
+    cp mp42aac /root/projects/targets/
+
+# binutils needs flex/bison to regenerate lexer/parser sources
+RUN apt-get install -y flex bison
+
+# binutils-5279478 / nm
+RUN cd $TARGET_DIR/binutils-5279478 && \
+    MAKEINFO=true CC=$LIBAFL_CC ./configure \
+      --disable-shared --disable-werror --disable-gdb --disable-gdbserver --disable-gold && \
+    for i in bfd libiberty opcodes libctf; do \
+        cd $i && MAKEINFO=true CC=$LIBAFL_CC ./configure --disable-shared --disable-werror && make -j && cd ..; \
+    done && \
+    cd binutils && MAKEINFO=true CC=$LIBAFL_CC ./configure --disable-shared --disable-werror && \
+    make nm-new && \
+    cp nm-new /root/projects/targets/nm
+
+# binutils-2.28 / objdump
+RUN cd $TARGET_DIR/binutils-2.28 && \
+    CC=$LIBAFL_CC ./configure --disable-shared LEXLIB= && \
+    make -j LEXLIB= && \
+    cp binutils/objdump /root/projects/targets/objdump
+
+# libpcap-1.8.1 + tcpdump-4.8.1 / tcpdump
+RUN cd $TARGET_DIR/libpcap-1.8.1 && CC=$LIBAFL_CC ./configure --disable-shared && make -j && \
+    cd $TARGET_DIR/tcpdump-4.8.1 && \
+    CC=$LIBAFL_CC CFLAGS="-Wno-error=implicit-int -Wno-error=implicit-function-declaration" ./configure && \
+    make -j && \
+    cp tcpdump /root/projects/targets/
+
+# ffmpeg-4.0.1
+RUN cd $TARGET_DIR/ffmpeg-4.0.1 && \
+    ./configure --disable-doc --disable-shared --cc="$LIBAFL_CC" --cxx="$LIBAFL_CXX" && \
+    make -j$(nproc) && \
+    cp ffmpeg_g /root/projects/targets/ffmpeg
 # ----- Target compile end ------
 
 # Allow non-root users (container runs as host uid) to access /root/

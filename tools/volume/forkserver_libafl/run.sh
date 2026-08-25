@@ -22,6 +22,16 @@ case "$TARGET" in
     jq)        TARGET_BINARY="/root/projects/targets/jq" ;;
     pdftotext) TARGET_BINARY="/root/projects/targets/pdftotext" ;;
     sqlite3)   TARGET_BINARY="/root/projects/targets/sqlite3" ;;
+    tiffsplit) TARGET_BINARY="/root/projects/targets/tiffsplit" ;;
+    jhead)     TARGET_BINARY="/root/projects/targets/jhead" ;;
+    lame)      TARGET_BINARY="/root/projects/targets/lame" ;;
+    infotocap) TARGET_BINARY="/root/projects/targets/tic" ;;
+    mujs)      TARGET_BINARY="/root/projects/targets/mujs" ;;
+    mp42aac)   TARGET_BINARY="/root/projects/targets/mp42aac" ;;
+    nm)        TARGET_BINARY="/root/projects/targets/nm" ;;
+    objdump)   TARGET_BINARY="/root/projects/targets/objdump" ;;
+    tcpdump)   TARGET_BINARY="/root/projects/targets/tcpdump" ;;
+    ffmpeg)    TARGET_BINARY="/root/projects/targets/ffmpeg" ;;
     *)         echo "forkserver_libafl: Unknown target: $TARGET"; exit 1 ;;
 esac
 
@@ -55,4 +65,5 @@ exec "$FUZZER" \
     $FUZZARGS \
     "$TARGET_BINARY" \
     "$SEED_DIR" \
+    -- \
     "${TARGET_ARGS[@]}"
