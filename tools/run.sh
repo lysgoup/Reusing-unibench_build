@@ -58,9 +58,28 @@ mkdir -p "$LOGDIR"
 mkdir -p "$POCDIR"
 mkdir -p "$LOCKDIR"
 
-# 오래된 lock 파일 청소
+# CPU lock을 docker ps 기준으로 재구성 (무조건 삭제 X): 이미 살아있는 컨테이너가
+# 점유중인 CPU는 lock 파일이 없어도 새로 만들고, lock 파일은 있는데 실제로는 아무
+# 컨테이너도 안 쓰는 CPU(죽은 캠페인이 남긴 stale lock)는 지운다. 같은 WORKDIR에
+# 대해 run.sh를 중첩 실행해도 기존 캠페인의 CPU를 빼앗거나 재사용하지 않기 위함.
 shopt -s nullglob
-rm -f "$LOCKDIR"/*
+busy_cpus=$'\n'"$(docker ps -q | xargs -r docker inspect --format '{{.HostConfig.CpusetCpus}}' 2>/dev/null | tr ',' '\n')"$'\n'
+declare -A locked_cpus
+for f in "$LOCKDIR"/unibench_cpu_*; do
+    cpu="${f##*unibench_cpu_}"
+    locked_cpus[$cpu]=1
+    case "$busy_cpus" in
+        *$'\n'"$cpu"$'\n'*) ;;  # still in use by a running container -- keep
+        *) rm -f "$f" ;;        # stale lock from a dead campaign -- clean up
+    esac
+done
+while read -r cpu; do
+    [ -n "$cpu" ] || continue
+    [ -n "${locked_cpus[$cpu]:-}" ] && continue
+    ( set -o noclobber; > "$LOCKDIR/unibench_cpu_$cpu" ) &>/dev/null || true
+done <<< "$busy_cpus"
+unset locked_cpus
+rm -f "$LOCKDIR"/base_*.lock
 shopt -u nullglob
 
 export MUX_TAR=unibench_tar
