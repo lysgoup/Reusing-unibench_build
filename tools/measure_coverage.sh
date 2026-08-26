@@ -8,13 +8,16 @@
 # now-free cores and can be parallelized freely (no contention with fuzzing).
 #
 # Usage:
-#   $0 WORKDIR INTERVAL [-t TARGET[,TARGET...]] [-r COV_RUNS] [-p PARALLEL] [-c CPULIST]
+#   $0 WORKDIR INTERVAL [-t TARGET[,TARGET...]] [-f FUZZER[,FUZZER...]] [-r COV_RUNS] [-p PARALLEL] [-c CPULIST]
 #     WORKDIR  (required):  same work directory used during the campaign (has coverage/)
 #     INTERVAL (required):  MINUTES per snapshot, for the time axis / plot
 #                           (should match the INTERVAL passed to archive_campaigns.sh)
 #     -t TARGET   (opt):    only measure this target; comma-separate for several
 #                           (e.g. -t nm  or  -t nm,objdump). Default: ALL targets.
-#                           All trials/fuzzers of the selected target(s) are measured.
+#     -f FUZZER   (opt):    only measure this fuzzer; comma-separate for several
+#                           (e.g. -f angora  or  -f angora,angora-reusing). Default: ALL fuzzers.
+#                           -t and -f combine (AND); all trials of the selected
+#                           fuzzer(s)/target(s) are measured.
 #     -r COV_RUNS (opt):    how many times each input is replayed per snapshot to union
 #                           non-deterministic coverage (default 8; e.g. 1 = once, 10 = 10x)
 #     -p PARALLEL (opt):    max concurrent coverage containers (default: nproc, or the
@@ -34,7 +37,7 @@
 #   FINAL_HTML      1 to also emit a final genhtml report per campaign (default 0)
 ##
 
-usage() { echo "Usage: $0 WORKDIR INTERVAL [-t TARGET[,TARGET...]] [-r COV_RUNS] [-p PARALLEL] [-c CPULIST]"; }
+usage() { echo "Usage: $0 WORKDIR INTERVAL [-t TARGET[,TARGET...]] [-f FUZZER[,FUZZER...]] [-r COV_RUNS] [-p PARALLEL] [-c CPULIST]"; }
 
 # Required positionals: WORKDIR and INTERVAL.
 if [ $# -lt 2 ]; then
@@ -48,10 +51,12 @@ shift 2
 COV_RUNS="${COV_RUNS:-8}"
 PARALLEL_FLAG=""
 TARGET_FILTER=""
+FUZZER_FILTER=""
 CPULIST=""
-while getopts ":t:r:p:c:" opt; do
+while getopts ":t:f:r:p:c:" opt; do
     case "$opt" in
         t) TARGET_FILTER="$OPTARG" ;;
+        f) FUZZER_FILTER="$OPTARG" ;;
         r) COV_RUNS="$OPTARG" ;;
         p) PARALLEL_FLAG="$OPTARG" ;;
         c) CPULIST="$OPTARG" ;;
@@ -118,6 +123,13 @@ if [ -n "$TARGET_FILTER" ]; then
     for _t in "${_tf[@]}"; do [ -n "$_t" ] && WANT_TARGET["$_t"]=1; done
 fi
 
+# Build the set of wanted fuzzers from -f (empty = all).
+declare -A WANT_FUZZER=()
+if [ -n "$FUZZER_FILTER" ]; then
+    IFS=',' read -ra _ff <<< "$FUZZER_FILTER"
+    for _f in "${_ff[@]}"; do [ -n "$_f" ] && WANT_FUZZER["$_f"]=1; done
+fi
+
 SUMMARY="$COVERAGEDIR/offline_summary.csv"
 
 measure_one() {
@@ -169,6 +181,10 @@ for fuzzer_dir in "$COVERAGEDIR"/*; do
     [ -d "$fuzzer_dir" ] || continue
     fuzzer=$(basename "$fuzzer_dir")
     [ "$fuzzer" = "html" ] && continue
+    # Apply fuzzer filter if any.
+    if [ "${#WANT_FUZZER[@]}" -gt 0 ] && [ -z "${WANT_FUZZER[$fuzzer]+x}" ]; then
+        continue
+    fi
     for target_dir in "$fuzzer_dir"/*; do
         [ -d "$target_dir" ] || continue
         target=$(basename "$target_dir")
@@ -186,8 +202,8 @@ done
 shopt -u nullglob
 
 if [ "${#JOBS[@]}" -eq 0 ]; then
-    if [ -n "$TARGET_FILTER" ]; then
-        echo "[ERROR] no campaigns for target(s) '$TARGET_FILTER' under $COVERAGEDIR"
+    if [ -n "$TARGET_FILTER" ] || [ -n "$FUZZER_FILTER" ]; then
+        echo "[ERROR] no campaigns for fuzzer(s) '${FUZZER_FILTER:-*}' / target(s) '${TARGET_FILTER:-*}' under $COVERAGEDIR"
     else
         echo "[ERROR] no campaigns found under $COVERAGEDIR"
     fi
@@ -195,6 +211,7 @@ if [ "${#JOBS[@]}" -eq 0 ]; then
 fi
 
 _scope="all targets"; [ -n "$TARGET_FILTER" ] && _scope="target(s) '$TARGET_FILTER'"
+[ -n "$FUZZER_FILTER" ] && _scope="$_scope, fuzzer(s) '$FUZZER_FILTER'"
 _pin="no CPU pinning"; [ "${#CORES[@]}" -gt 0 ] && _pin="pinned to CPUs [$CPULIST]"
 echo_time "Measuring ${#JOBS[@]} campaign(s) ($_scope); parallel=$PARALLEL ; $_pin ; image=$COVERAGE_IMAGE"
 
