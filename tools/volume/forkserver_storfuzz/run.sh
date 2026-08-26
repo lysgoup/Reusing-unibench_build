@@ -21,8 +21,7 @@ case "$TARGET" in
     cflow)     TARGET_BINARY="/root/projects/targets/cflow" ;;
     jq)        TARGET_BINARY="/root/projects/targets/jq" ;;
     pdftotext) TARGET_BINARY="/root/projects/targets/pdftotext" ;;
-    sqlite3)            TARGET_BINARY="/root/projects/targets/sqlite3" ;;
-    libpng_read_fuzzer) TARGET_BINARY="/root/projects/targets/libpng_read_fuzzer" ;;
+    sqlite3)   TARGET_BINARY="/root/projects/targets/sqlite3" ;;
     tiffsplit) TARGET_BINARY="/root/projects/targets/tiffsplit" ;;
     jhead)     TARGET_BINARY="/root/projects/targets/jhead" ;;
     lame)      TARGET_BINARY="/root/projects/targets/lame" ;;

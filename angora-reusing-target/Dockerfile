@@ -274,21 +274,6 @@ RUN cd /unibench/jasper-2.0.12 && export ANGORA_PASS_LOG_DIR=$(pwd) && cmake -DJ
     cp src/appl/imginfo /d/p/angora/taint/ &&\
     make clean
 
-RUN git clone --depth=1 --branch v1.6.51 https://github.com/pnggroup/libpng.git /unibench/libpng
-
-COPY Reusing-unibench_build/angora-reusing-target/build_for_angora.sh /unibench/libpng/
-COPY Reusing-unibench_build/angora-reusing-target/libfuzz-harness-proxy.c /unibench/libpng/
-# StorFuzz build script for libpng (produces a StorFuzz-instrumented angora-out/libpng_angora.fast)
-COPY Reusing-unibench_build/angora-reusing-target/build_for_storfuzz.sh /unibench/libpng/
-
-RUN cd /unibench/libpng && export ANGORA_PASS_LOG_DIR=$(pwd) && \
-    bash build_for_angora.sh && \
-    cp angora-out/libpng_angora.fast /d/p/angora/fast/libpng_read_fuzzer && \
-    cp angora-out/libpng_angora.taint /d/p/angora/taint/libpng_read_fuzzer && \
-    cp scripts/pnglibconf.dfa.bak scripts/pnglibconf.dfa && \
-    bash build_for_storfuzz.sh && \
-    cp angora-out/libpng_angora.fast /d/p/angora/fast_storfuzz/libpng_read_fuzzer
-
 RUN chmod -R a+rX /unibench
 
 RUN ls -alh /d/p/angora/*
