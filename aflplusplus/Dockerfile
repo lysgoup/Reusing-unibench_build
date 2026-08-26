@@ -221,17 +221,21 @@ RUN cd /unibench/binutils-2.28 && ./configure --disable-shared &&\
     make -j &&\
     cp binutils/objdump /d/p/aflplusplus/
 
-# RUN cd /unibench/libpcap-1.8.1 && ./configure --disable-shared &&\
-#     make -j &&\
-#     cd /unibench/tcpdump-4.8.1 && ./configure &&\
-#     make -j &&\
-#     cp tcpdump /d/p/aflplusplus/
+RUN cd /unibench/libpcap-1.8.1 && ./configure --disable-shared &&\
+    make -j &&\
+    cd /unibench/tcpdump-4.8.1 &&\
+    CFLAGS="-Wno-error=implicit-int -Wno-error=implicit-function-declaration" ./configure &&\
+    make -j &&\
+    cp tcpdump /d/p/aflplusplus/
 
-RUN rm -r /unibench/ffmpeg-4.0.1 &&\
-    wget --quiet https://gitlab.com/unifuzz/unibench_build/raw/master/ffmpeg/coverage.tar.gz &&\
-    tar xf coverage.tar.gz -C / &&\
-    rm coverage.tar.gz &&\
-    cp /unibench/ffmpeg-4.0.1/ffmpeg_g /d/p/aflplusplus/ffmpeg
+# Compiled from source with afl-clang-fast (same recipe angora already uses
+# successfully for this target: --disable-doc --disable-shared --cc/--cxx),
+# replacing the old prebuilt non-instrumented coverage.tar.gz binary that
+# made afl-fuzz abort with "No instrumentation detected" on dry run.
+RUN cd /unibench/ffmpeg-4.0.1 &&\
+    ./configure --disable-doc --disable-shared --cc="$CC" --cxx="$CXX" &&\
+    make -j$(nproc) &&\
+    cp ffmpeg_g /d/p/aflplusplus/ffmpeg
 
 # libpng intentionally skipped: no working build_for_aflpp.sh exists anywhere
 # in this tree (the old `COPY target/libpng` here pointed at a path that
