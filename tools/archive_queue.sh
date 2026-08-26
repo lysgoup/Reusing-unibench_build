@@ -151,6 +151,17 @@ if [ "$SATURATION" = 1 ] && [ ! -f "$BASE_MARKED" ]; then
     : > "$BASE_MARKED"
     echo_ts "saturation: marked $_pre dry-run base files (boundary=dryrun_finish); post-signal discoveries kept as deltas"
     [ "$ITERATION" -lt 1 ] && ITERATION=1   # iter_0000 is the base
+
+    # iter_0000 already exists (installed by run.sh before this script even
+    # started) and cost no sleep here, so without this the first delta pass
+    # (iter 1) would fire immediately instead of one INTERVAL after
+    # dryrun_finish like every subsequent pass does -- making a saturation-mode
+    # campaign finish MAX_ITERATIONS runs one INTERVAL earlier than a
+    # non-saturation one for the same MAX_ITERATIONS. Sleeping here (once, only
+    # on this first-time path) equalizes the cadence instead of touching the
+    # MAX_ITERATIONS stop check.
+    echo_ts "saturation mode on, iter_0000.tar.gz already installed; waiting ${INTERVAL}s before the first delta pass"
+    sleep "$INTERVAL" 9>&-
 fi
 
 echo_ts "starting at iter $ITERATION (interval ${INTERVAL}s, min_sleep ${MIN_SLEEP}s, saturation=$SATURATION)"
