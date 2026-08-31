@@ -121,9 +121,9 @@ run_input() {
     local r
     for ((r = 0; r < COV_RUNS; r++)); do
         if [ -n "$target_stdin_from_file" ]; then
-            timeout "$COV_TIMEOUT" "$COVERAGE_BIN" "${cmd_args[@]}" < "$tmp" >/dev/null 2>&1 || true
+            timeout -k 5 "$COV_TIMEOUT" "$COVERAGE_BIN" "${cmd_args[@]}" < "$tmp" >/dev/null 2>&1 || true
         else
-            timeout "$COV_TIMEOUT" "$COVERAGE_BIN" "${cmd_args[@]}" >/dev/null 2>&1 || true
+            timeout -k 5 "$COV_TIMEOUT" "$COVERAGE_BIN" "${cmd_args[@]}" >/dev/null 2>&1 || true
         fi
     done
     rm -f "$tmp"
