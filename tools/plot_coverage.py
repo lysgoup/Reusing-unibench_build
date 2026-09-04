@@ -248,6 +248,32 @@ def collect_and_save_branch_data(workdir, coverage_dir, data_dir, use_median=Fal
 # reserved for the low end of the range.
 BOTTOM_MARGIN = 20
 
+# Fixed color per fuzzer family (by substring, so every variant name still
+# matches) and fixed linestyle per fuzzer within that family, so the same
+# fuzzer always looks the same across every comparison graph instead of
+# shifting with alphabetical sort order.
+FUZZER_FAMILY_COLORS = (
+    ('aflplusplus', 'red'),
+    ('angora', 'blue'),
+)
+DEFAULT_FUZZER_COLOR = 'green'  # forkserver_libafl / forkserver_storfuzz / anything else
+
+# The base name of each family gets a solid line; every other variant
+# (-reusing, -storfuzz, -autoextras, ...) gets a dashed line.
+FUZZER_BASE_NAMES = {'angora', 'aflplusplus', 'forkserver_libafl'}
+
+
+def get_fuzzer_style(fuzzer_name):
+    """Fixed (color, linestyle) for a fuzzer name, grouped by family."""
+    name = fuzzer_name.lower()
+    color = DEFAULT_FUZZER_COLOR
+    for substr, family_color in FUZZER_FAMILY_COLORS:
+        if substr in name:
+            color = family_color
+            break
+    linestyle = '-' if fuzzer_name in FUZZER_BASE_NAMES else '--'
+    return color, linestyle
+
 
 def set_ylim_with_margin(ax, all_values):
     """
@@ -537,23 +563,23 @@ def plot_comparison_graphs(graph_dir, data_dir, interval, log_x=False, use_media
             all_values.extend(data['ci_upper'])
             all_values.extend(data['ci_lower'])
 
-        # Plot each fuzzer's data in different colors
-        colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'pink', 'gray']
-        for idx, fuzzer_name in enumerate(sorted(fuzzers_data.keys())):
+        # Plot each fuzzer's data with its fixed family color/linestyle
+        for fuzzer_name in sorted(fuzzers_data.keys()):
             data = fuzzers_data[fuzzer_name]
             avg_data = data['avg']
             ci_upper = data['ci_upper']
             ci_lower = data['ci_lower']
             time_points = data['time_points']
 
-            color = colors[idx % len(colors)]
+            color, linestyle = get_fuzzer_style(fuzzer_name)
 
             # Fill the bootstrap 95% CI band with light color
             if not only_average:
-                ax.fill_between(time_points, ci_lower, ci_upper, color=color, alpha=0.15)
+                ax.fill_between(time_points, ci_lower, ci_upper, color=color, alpha=0.08)
 
             # Plot average line
-            ax.plot(time_points, avg_data, color=color, linewidth=2, label=fuzzer_name, marker='o', markersize=2.5)
+            ax.plot(time_points, avg_data, color=color, linestyle=linestyle, linewidth=1.2,
+                     label=fuzzer_name)
 
         # Set Y-axis range: fixed bottom margin, top margin scaled to max_val
         set_ylim_with_margin(ax, all_values)
@@ -638,7 +664,6 @@ def plot_per_trial_comparison_graphs(graph_dir, data_dir, interval, log_x=False)
 
             all_data.setdefault(target_name, {}).setdefault(fuzzer_name, {})[campaign_num] = values
 
-    colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'pink', 'gray']
     trial_count = 0
 
     for target_name in sorted(all_data.keys()):
@@ -657,13 +682,13 @@ def plot_per_trial_comparison_graphs(graph_dir, data_dir, interval, log_x=False)
             fig, ax = plt.subplots(figsize=(12, 8))
             all_values = []
 
-            for idx, fuzzer_name in enumerate(sorted(fuzzer_list)):
+            for fuzzer_name in sorted(fuzzer_list):
                 values = fuzzers[fuzzer_name][campaign_num]
                 num_points = len(values)
                 time_points = [i * interval / 60 for i in range(num_points)]
-                color = colors[idx % len(colors)]
-                ax.plot(time_points, values, color=color, linewidth=2,
-                        label=fuzzer_name, marker='o', markersize=2.5)
+                color, linestyle = get_fuzzer_style(fuzzer_name)
+                ax.plot(time_points, values, color=color, linestyle=linestyle, linewidth=1.2,
+                        label=fuzzer_name)
                 all_values.extend(values)
 
             # Set Y-axis range: fixed bottom margin, top margin scaled to max_val
