@@ -44,7 +44,35 @@ sync_shared_tags() {
 # so it just falls through to the default else-branch below like any other
 # $FUZZER directory with a Dockerfile.
 
-if [ "$FUZZER" = "angora" ] || [ "$FUZZER" = "angora-storfuzz" ]; then
+# aflplusplus and aflplusplus-autoextras are the exact same image/binary
+# (see tools/volume/aflplusplus-autoextras/run.sh -- the only difference is
+# a runtime env var, not a build difference), just like angora/
+# angora-storfuzz share angora-reusing below. Whichever of the two gets
+# built, re-tag the other to match, so building "aflplusplus" doesn't leave
+# "aflplusplus-autoextras" stale until someone happens to ask for it.
+sync_aflplusplus_tags() {
+    local base_id current_id
+    base_id=$(docker images -q unifuzz/unibench:aflplusplus)
+    current_id=$(docker images -q unifuzz/unibench:aflplusplus-autoextras)
+    if [ "$base_id" != "$current_id" ]; then
+        echo_time "Tagging unifuzz/unibench:aflplusplus-autoextras to match aflplusplus ($base_id)."
+        docker tag "unifuzz/unibench:aflplusplus" "unifuzz/unibench:aflplusplus-autoextras"
+    else
+        echo_time "unifuzz/unibench:aflplusplus-autoextras already up to date."
+    fi
+}
+
+if [ "$FUZZER" = "aflplusplus-autoextras" ]; then
+    echo_time "Smart build for aflplusplus-autoextras (shares the aflplusplus image)"
+    FUZZER=aflplusplus "$UNIBENCH/tools/build.sh"
+    sync_aflplusplus_tags
+elif [ "$FUZZER" = "aflplusplus" ]; then
+    echo_time "Building aflplusplus (also syncing aflplusplus-autoextras tag)"
+    set -x
+    docker build -t "$IMG_NAME" -f "$UNIBENCH/$FUZZER/Dockerfile" "$UNIBENCH/../"
+    set +x
+    sync_aflplusplus_tags
+elif [ "$FUZZER" = "angora" ] || [ "$FUZZER" = "angora-storfuzz" ]; then
     echo_time "Smart build for $FUZZER (shares the angora-reusing image; syncing all shared tags)"
     FUZZER=angora-reusing "$UNIBENCH/tools/build.sh"
     sync_shared_tags

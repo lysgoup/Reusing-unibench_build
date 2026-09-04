@@ -76,14 +76,6 @@ if [ ! -z "$SEED" ]; then
     flag_seed_env="--env=SEED=/customized_seed"
 fi
 
-# Opt-out toggle for AFL++'s auto-detected dictionary tokens (a_extras) --
-# see aflplusplus/no_auto_extras.patch. Default (unset) leaves it on, same
-# as upstream AFL++. Only forwarded into the container when set, so an
-# unset captainrc var never overrides the patch's own default.
-if [ ! -z "$AFL_NO_AUTO_EXTRAS" ]; then
-    flag_afl_no_auto_extras="--env=AFL_NO_AUTO_EXTRAS=$AFL_NO_AUTO_EXTRAS"
-fi
-
 if [ ! -z "$QUEUE_FILE" ]; then
     QUEUE_FILE="$(realpath "$QUEUE_FILE")"
     flag_queue_volume="--volume=$QUEUE_FILE:/restore/cond_queue.csv:ro"
@@ -111,7 +103,7 @@ if [ -t 1 ]; then
         --env=FUZZER="$FUZZER" --env=TARGET="$TARGET" \
         --env=FUZZARGS="$FUZZARGS" \
         --env=TIMEOUT="$TIMEOUT" \
-        $flag_seed_env $flag_queue_env $flag_afl_no_auto_extras \
+        $flag_seed_env $flag_queue_env \
         $flag_aff $flag_user $flag_name $flag_ep "$IMG_NAME"
 else
     echo_time "Running in non-interactive mode (no TTY)"
@@ -120,7 +112,7 @@ else
         --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --ulimit core=0 \
         --env=FUZZER="$FUZZER" --env=TARGET="$TARGET" \
         --env=FUZZARGS="$FUZZARGS" --env=TIMEOUT="$TIMEOUT" \
-        $flag_seed_env $flag_queue_env $flag_afl_no_auto_extras \
+        $flag_seed_env $flag_queue_env \
         --network=none \
         $flag_aff $flag_user $flag_name $flag_ep "$IMG_NAME"
     )

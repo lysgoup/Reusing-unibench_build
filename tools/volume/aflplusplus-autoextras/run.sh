@@ -9,15 +9,11 @@
 # - env FUZZARGS: extra arguments to pass to the fuzzer
 ##
 #
-# Plain aflplusplus -- own image, built from a clone+patch of upstream
-# AFL++ (see aflplusplus/Dockerfile), no taint tracking companion binary
-# at all (unlike ../aflplusplus-reusing/run.sh, which additionally sets
-# AFL_DTAINT_BINARY to turn on the dtaint save_if_interesting() hook).
-#
-# Auto-detected dictionary tokens (a_extras) OFF by design for this fuzzer
-# name -- see no_auto_extras.patch. ../aflplusplus-autoextras/run.sh shares
-# this exact image/binary (see build.sh) and is the only difference between
-# the two: it omits this export, leaving upstream's default (auto-extras ON).
+# Same image/binary as ../aflplusplus/run.sh (see build.sh -- this fuzzer
+# name shares that build, tagged separately) and identical in every way
+# EXCEPT one: no AFL_NO_AUTO_EXTRAS export here, so AFL++'s own default
+# (auto-detected dictionary tokens / a_extras ON) applies. That's the sole
+# reason this file exists instead of a runtime toggle.
 
 # Validate required environment variables
 if [ -z "$TARGET" ]; then
@@ -46,9 +42,6 @@ export AFL_NO_AFFINITY=1
 export AFL_NO_UI=1
 export AFL_MAP_SIZE=256000
 export AFL_DRIVER_DONT_DEFER=1
-
-# Auto-extras OFF -- baked in for this fuzzer name (see header note).
-export AFL_NO_AUTO_EXTRAS=1
 
 # Convert ARGS_STR back to array
 eval "ARGS=($ARGS_STR)"
