@@ -109,8 +109,13 @@ for target in "${!all_targets[@]}"; do
             [ -d "$queue_dir" ] || queue_dir="$run_dir/findings/default/queue"
             [ -d "$queue_dir" ] || continue
 
-            for f in "$queue_dir"/id:*; do
-                [[ -f "$f" ]] || continue
+            # AFL-family queue entries are named id:*, but not every fuzzer
+            # follows that convention (e.g. forkserver_libafl/LibAFL names
+            # queue files by content hash instead, like
+            # d73817bc4c77cf55) -- match any non-hidden file so those
+            # aren't silently dropped. Hidden files are LibAFL's own
+            # .*.metadata / .*.lafl_lock sidecars, not actual corpus inputs.
+            while IFS= read -r f; do
                 total=$((total + 1))
                 hash=$(sha256sum "$f" | cut -d' ' -f1)
                 if [[ -z "${seen_hashes[$hash]+x}" ]]; then
@@ -119,7 +124,7 @@ for target in "${!all_targets[@]}"; do
                     cp "$f" "$dest/$new_name"
                     counter=$((counter + 1))
                 fi
-            done
+            done < <(find "$queue_dir" -maxdepth 1 -type f ! -name '.*' 2>/dev/null)
         done
     done
     shopt -u nullglob
