@@ -179,7 +179,7 @@ elif [ "$FUZZER" = "aflplusplus-reusing" ]; then
     FUZZER_HASH=$(cd "$AFLPP_REUSING_ROOT" && echo "$FUZZER_FILE_LIST" | tar -cf - -T - 2>/dev/null | sha256sum | cut -d' ' -f1)
     TOOLCHAIN_HASH=$(cd "$AFLPP_REUSING_ROOT" && echo "$TOOLCHAIN_FILE_LIST" | tar -cf - -T - 2>/dev/null | sha256sum | cut -d' ' -f1)
 
-    CACHE_DIR="$UNIBENCH/../_build_cache"
+    CACHE_DIR="$AFLPP_REUSING_ROOT/_build_cache"
     mkdir -p "$CACHE_DIR"
     CACHED_TOOLCHAIN_HASH=""
     CACHED_FUZZER_HASH=""
