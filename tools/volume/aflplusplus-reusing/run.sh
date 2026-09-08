@@ -74,6 +74,21 @@ fi
 # in src/afl-fuzz-bitmap.c (AFLplusplus_reusing).
 export AFL_DTAINT_BINARY="$DTAINT_BIN"
 
+# cmpid -> source-location table (see aflplusplus-reusing-target/Dockerfile's
+# ANGORA_OUTPUT_COND_LOC=1 step and parse_cond_loc.py), built alongside
+# $DTAINT_BIN and otherwise stuck inside the image -- copy it into the
+# campaign's own findings dir so a .dtaint record's cmpid can be looked up
+# after the fact, from the host, without a shell into the container. Only
+# present for images rebuilt after that Dockerfile change; best-effort so an
+# older image doesn't fail the run over it.
+CMPID_LOCS="/d/p/aflplusplus-reusing/dtaint/${TARGET}.cmpid_log.txt"
+mkdir -p "$OUTPUT_DIR"
+if [ -f "$CMPID_LOCS" ]; then
+    cp "$CMPID_LOCS" "$OUTPUT_DIR/cmpid_log.txt"
+else
+    echo "Warning: cmpid_log.txt not found for $TARGET at $CMPID_LOCS (image built before ANGORA_OUTPUT_COND_LOC logging was added?)"
+fi
+
 # Run aflplusplus. Unlike ../aflplusplus/run.sh's hardcoded /aflplusplus/afl-fuzz
 # (that image's own AFL++ checkout lives at that lowercase path), this fork's
 # Dockerfile (AFLplusplus_reusing) keeps the source tree at /AFLplusplus and
