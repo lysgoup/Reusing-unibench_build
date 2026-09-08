@@ -6,6 +6,7 @@ Coverage data visualization script - Branch coverage progress per target
 import os
 import sys
 import re
+import zlib
 from pathlib import Path
 import argparse
 from collections import defaultdict
@@ -262,6 +263,21 @@ DEFAULT_FUZZER_COLOR = 'green'  # forkserver_libafl / forkserver_storfuzz / anyt
 # (-reusing, -storfuzz, -autoextras, ...) gets a dashed line.
 FUZZER_BASE_NAMES = {'angora', 'aflplusplus', 'forkserver_libafl'}
 
+# Dash length per non-base variant, so two variants sharing a family color
+# (e.g. aflplusplus-autoextras and aflplusplus-cmplog, both red) are still
+# visually distinct instead of overlapping as the same '--'. Matched by
+# substring against the lowercased fuzzer name; first match wins. A variant
+# not listed here falls back to a pattern picked by a stable hash of its
+# name, so it gets a consistent (if arbitrary) dash length instead of
+# silently colliding with an existing one.
+VARIANT_DASH_PATTERNS = (
+    ('autoextras', (0, (2, 2))),   # short dash
+    ('reusing', (0, (6, 3))),      # medium dash
+    ('cmplog', (0, (10, 3))),      # long dash
+    ('storfuzz', (0, (1, 2))),     # dotted
+)
+_FALLBACK_DASH_POOL = tuple(pattern for _, pattern in VARIANT_DASH_PATTERNS)
+
 
 def get_fuzzer_style(fuzzer_name):
     """Fixed (color, linestyle) for a fuzzer name, grouped by family."""
@@ -271,8 +287,16 @@ def get_fuzzer_style(fuzzer_name):
         if substr in name:
             color = family_color
             break
-    linestyle = '-' if fuzzer_name in FUZZER_BASE_NAMES else '--'
-    return color, linestyle
+
+    if fuzzer_name in FUZZER_BASE_NAMES:
+        return color, '-'
+
+    for substr, pattern in VARIANT_DASH_PATTERNS:
+        if substr in name:
+            return color, pattern
+
+    idx = zlib.crc32(fuzzer_name.encode()) % len(_FALLBACK_DASH_POOL)
+    return color, _FALLBACK_DASH_POOL[idx]
 
 
 def set_ylim_with_margin(ax, all_values):
