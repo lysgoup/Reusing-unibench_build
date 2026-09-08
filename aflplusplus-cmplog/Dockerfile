@@ -2,7 +2,7 @@
 # Build context: $UNIBENCH/../ (default else-branch in tools/build.sh), i.e.
 # COPY paths below need the Reusing-unibench_build/ prefix.
 #
-# AFL++ with cmplog ON, auto-extras OFF -- for exiv2/mp3gain/mujs only (see
+# AFL++ with cmplog ON, auto-extras OFF -- for exiv2/mp3gain/mujs/imginfo/infotocap only (see
 # tools/captainrc_aflpp_autoextras_compare's target set; add more RUN blocks
 # below, mirroring the pattern, if more targets are needed later).
 #
@@ -169,6 +169,21 @@ RUN cd /unibench/mujs-1.0.2 &&\
     make clean &&\
     AFL_LLVM_CMPLOG=1 build=debug make -j &&\
     cp build/debug/mujs /d/p/aflplusplus-cmplog/cmplog/
+
+RUN cd /unibench/jasper-2.0.12 && \
+    cmake -DJAS_ENABLE_SHARED=OFF -DALLOW_IN_SOURCE_BUILD=ON -DCMAKE_C_FLAGS="-Wno-shift-negative-value -Wno-implicit-function-declaration" . &&\
+    make -j &&\
+    cp src/appl/imginfo /d/p/aflplusplus-cmplog/ &&\
+    make clean &&\
+    AFL_LLVM_CMPLOG=1 make -j &&\
+    cp src/appl/imginfo /d/p/aflplusplus-cmplog/cmplog/
+
+RUN cd /unibench/ncurses-6.1 && ./configure --disable-shared &&\
+    make -j &&\
+    cp progs/tic /d/p/aflplusplus-cmplog/infotocap &&\
+    make clean &&\
+    AFL_LLVM_CMPLOG=1 make -j &&\
+    cp progs/tic /d/p/aflplusplus-cmplog/cmplog/infotocap
 
 RUN ls -alh /d/p/aflplusplus-cmplog/ /d/p/aflplusplus-cmplog/cmplog/
 
