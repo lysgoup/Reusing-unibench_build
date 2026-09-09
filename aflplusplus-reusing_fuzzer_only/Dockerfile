@@ -33,8 +33,25 @@ COPY src /AFLplusplus/src
 COPY include /AFLplusplus/include
 COPY GNUmakefile /AFLplusplus/GNUmakefile
 
+# CFLAGS_FLTO= (LTO off) works around a GCC 11 ICE hit repeatedly, and only
+# in this Docker build (never in a plain host `make`): "internal compiler
+# error: in copy_to_mode_reg, at explow.c" inside XXH3_hashLong_64b_default
+# (xxHash, pulled in via afl-performance.c) during LTO's whole-program
+# codegen. LTO repartitions which functions land in which LTRANS unit based
+# on everything being linked together, so it's sensitive to unrelated
+# changes elsewhere -- adding reusing-taint-worker's build (or even just
+# the -r CLI option) was enough to move XXH3_hashLong_64b_default into a
+# partition that triggers it here, consistently, across many retries.
+# Also `rm -f` the shared .o's the target image baked in -- those were
+# themselves compiled WITH LTO (GIMPLE-bytecode-only objects), so even
+# after adding CFLAGS_FLTO= to THIS link, re-using them still drags the
+# same buggy codegen back in via the linker. Forcing them to recompile here
+# (also without LTO) is what actually fixes it -- confirmed by testing
+# CFLAGS_FLTO= alone (reusing the old .o's) still failed 3/3 tries, while
+# adding this `rm -f` succeeded 3/3.
 RUN cd /AFLplusplus && \
-    make afl-fuzz && \
+    rm -f src/afl-common.o src/afl-sharedmem.o src/afl-forkserver.o src/afl-performance.o && \
+    make CFLAGS_FLTO= afl-fuzz && \
     install -m 755 afl-fuzz "$(command -v afl-fuzz)" && \
-    make reusing-taint-worker && \
+    make CFLAGS_FLTO= reusing-taint-worker && \
     install -m 755 reusing-taint-worker /usr/local/bin/

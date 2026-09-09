@@ -100,7 +100,15 @@ ARG CXX=g++-$GCC_VERSION
 RUN python3 -m venv .venv
 ENV PATH="/AFLplusplus/.venv/bin:$PATH"
 
-RUN sed -i.bak 's/^	-/	/g' GNUmakefile && \
+# The CFLAGS_FLTO neutering (2nd -e) works around a GCC 11 LTO
+# internal-compiler-error (ICE) in XXH3_hashLong_64b_default's SSE2
+# intrinsics during whole-program codegen -- observed as a flaky, but
+# eventually consistent, build failure in aflplusplus-reusing's own build
+# (same GCC 11.5.0, same xxHash-via-afl-performance.c code path); disabled
+# here too so all fuzzer variants being compared get afl-fuzz built the
+# same way (LTO on for one and off for another would itself be a confound
+# in any cross-fuzzer throughput comparison).
+RUN sed -i.bak -e 's/^	-/	/g' -e 's/CFLAGS_FLTO ?= -flto.*/CFLAGS_FLTO ?=/' GNUmakefile && \
     make clean && make distrib && make install && \
     mv GNUmakefile.bak GNUmakefile
 
