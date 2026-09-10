@@ -301,6 +301,42 @@ cleanup()
 }
 trap cleanup EXIT
 
+# Fuzzers whose volume run.sh passes `afl-fuzz -r <taint pool dir>` and so
+# cannot start without one. A list rather than a single name so a second
+# reuse variant only has to be added here.
+TAINT_REQUIRED_FUZZERS=(aflplusplus-reusing)
+
+# Resolve -r's value per (fuzzer, target) from the captainrc and bail out NOW
+# if a campaign that needs one is missing it. Checked here, ahead of
+# build.sh, because every later failure mode is worse: caught inside the
+# container it is one dead campaign among many that keep running, and not
+# caught at all it is a run that looks like reuse data but is really a
+# baseline. A set-but-wrong path is the nastiest of the three -- the fuzzer
+# would just find an empty pool and degrade silently -- so the directory has
+# to exist, not merely be non-empty.
+#
+# Variable is <target>_TAINT_DIR, with get_var_or_default's usual fallbacks
+# (DEFAULT_TAINT_DIR, then a bare TAINT_DIR covering every target).
+for _tf in "${FUZZERS[@]}"; do
+    contains_element "$_tf" "${TAINT_REQUIRED_FUZZERS[@]}" || continue
+    for _tt in $(get_var_or_default "$_tf" 'TARGETS'); do
+        _td="$(get_var_or_default "$_tt" 'TAINT_DIR')"
+        if [ -z "$_td" ]; then
+            echo_time "ERROR: $_tf/$_tt needs a taint pool dir for afl-fuzz -r."
+            echo_time "       Set ${_tt//-/_}_TAINT_DIR (or TAINT_DIR for every target) in the captainrc."
+            exit 1
+        fi
+        if [ ! -d "$_td" ]; then
+            echo_time "ERROR: $_tf/$_tt taint pool dir does not exist: $_td"
+            echo_time "       Check ${_tt//-/_}_TAINT_DIR in the captainrc -- a bad path would leave the"
+            echo_time "       fuzzer with an empty pool instead of failing."
+            exit 1
+        fi
+        echo_time "Taint pool for $_tf/$_tt: $_td"
+    done
+done
+unset _tf _tt _td
+
 # build Docker images
 BUILT_FUZZER=()
 for FUZZER in "${FUZZERS[@]}"; do
@@ -322,6 +358,11 @@ for FUZZER in "${BUILT_FUZZER[@]}"; do
         export TARGET
         export FUZZARGS="$(get_var_or_default "$FUZZER" "$TARGET" 'FUZZARGS') ${GLOBAL_FUZZARGS:-}"
         export QUEUE_FILE="$(get_var_or_default "$TARGET" 'QUEUE_FILE')"
+        # Host path; start.sh mounts it and rewrites this to the in-container
+        # path the volume run.sh hands to afl-fuzz -r. Already validated above
+        # for every fuzzer in TAINT_REQUIRED_FUZZERS, and simply unused (so
+        # not mounted) by fuzzers that take no -r.
+        export TAINT_DIR="$(get_var_or_default "$TARGET" 'TAINT_DIR')"
         DEFAULT_SEED="$(get_var_or_default "$TARGET" 'SEED')"
         echo_time "Starting campaigns for $TARGET $ARGS"
         for ((i=0; i<REPEAT; i++)); do

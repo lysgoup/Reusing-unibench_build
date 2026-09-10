@@ -40,6 +40,25 @@ if [ -z "$ARGS_STR" ]; then
     ARGS_STR=""
 fi
 
+# afl-fuzz -r's value: this target's taint pool (reusing-taint-worker's
+# value_pool.dict / unsolved_condition cache), mounted read-only at /taint by
+# start.sh from the captainrc's <target>_TAINT_DIR. tools/run.sh already
+# refuses to launch a campaign for this fuzzer without one, so reaching here
+# unset means someone bypassed that -- a direct start.sh or docker run. Hard
+# error either way rather than dropping -r, since a campaign that quietly
+# fuzzes without its pool is indistinguishable from a baseline afterwards.
+if [ -z "$TAINT_DIR" ]; then
+    echo "Error: TAINT_DIR environment variable is not set"
+    echo "       Set <target>_TAINT_DIR in the captainrc (tools/run.sh validates it),"
+    echo "       or pass TAINT_DIR=<host path> if invoking tools/start.sh directly."
+    exit 1
+fi
+
+if [ ! -d "$TAINT_DIR" ]; then
+    echo "Error: Taint pool dir not found at $TAINT_DIR"
+    exit 1
+fi
+
 # Disable CPU binding for better compatibility
 export AFL_SKIP_CPUFREQ=1
 export AFL_NO_AFFINITY=1
@@ -94,4 +113,5 @@ fi
 # Dockerfile (AFLplusplus_reusing) keeps the source tree at /AFLplusplus and
 # `make install`s it, so afl-fuzz is simply on PATH -- use that instead of
 # guessing the source-tree casing.
-afl-fuzz -i "$SEED" -o "$OUTPUT_DIR" $FUZZARGS -- "$FAST_BIN" "${ARGS[@]}" 2>&1
+echo "Taint pool (-r): $TAINT_DIR"
+afl-fuzz -i "$SEED" -o "$OUTPUT_DIR" -r "$TAINT_DIR" $FUZZARGS -- "$FAST_BIN" "${ARGS[@]}" 2>&1

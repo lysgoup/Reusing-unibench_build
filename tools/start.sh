@@ -82,6 +82,17 @@ if [ ! -z "$QUEUE_FILE" ]; then
     flag_queue_env="--env=QUEUE_FILE=/restore/cond_queue.csv"
 fi
 
+# Taint pool dir for afl-fuzz -r (reusing-taint-worker's value_pool.dict /
+# unsolved_condition cache for this target). Mounted read-only: one pool is
+# shared by every trial of every campaign against the same seed set, so no
+# container has any business writing to it. TAINT_DIR arrives as a host path
+# and is re-exported as the in-container one, same as QUEUE_FILE above.
+if [ ! -z "$TAINT_DIR" ]; then
+    TAINT_DIR="$(realpath "$TAINT_DIR")"
+    flag_taint_volume="--volume=$TAINT_DIR:/taint:ro"
+    flag_taint_env="--env=TAINT_DIR=/taint"
+fi
+
 # Picks a different script in $FUZZER's own volume dir (e.g. run_taint.sh
 # instead of run.sh) -- see entrypoint.sh's own RUN_SCRIPT comment. Only
 # forwarded when set, so an unset launcher gets entrypoint.sh's normal
@@ -106,21 +117,21 @@ flag_name="--name=$container_name"
 
 if [ -t 1 ]; then
     echo_time "Running in interactive mode (TTY attached)"
-    docker run -it $flag_volume $flag_volume_extra $flag_seed_volume $flag_queue_volume \
+    docker run -it $flag_volume $flag_volume_extra $flag_seed_volume $flag_queue_volume $flag_taint_volume \
         --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --ulimit core=0 \
         --env=FUZZER="$FUZZER" --env=TARGET="$TARGET" \
         --env=FUZZARGS="$FUZZARGS" \
         --env=TIMEOUT="$TIMEOUT" \
-        $flag_seed_env $flag_queue_env $flag_run_script_env \
+        $flag_seed_env $flag_queue_env $flag_run_script_env $flag_taint_env \
         $flag_aff $flag_user $flag_name $flag_ep "$IMG_NAME"
 else
     echo_time "Running in non-interactive mode (no TTY)"
     container_id=$(
-    docker run -dt $flag_volume $flag_volume_extra $flag_seed_volume $flag_queue_volume \
+    docker run -dt $flag_volume $flag_volume_extra $flag_seed_volume $flag_queue_volume $flag_taint_volume \
         --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --ulimit core=0 \
         --env=FUZZER="$FUZZER" --env=TARGET="$TARGET" \
         --env=FUZZARGS="$FUZZARGS" --env=TIMEOUT="$TIMEOUT" \
-        $flag_seed_env $flag_queue_env $flag_run_script_env \
+        $flag_seed_env $flag_queue_env $flag_run_script_env $flag_taint_env \
         --network=none \
         $flag_aff $flag_user $flag_name $flag_ep "$IMG_NAME"
     )
