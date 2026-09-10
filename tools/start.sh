@@ -82,6 +82,14 @@ if [ ! -z "$QUEUE_FILE" ]; then
     flag_queue_env="--env=QUEUE_FILE=/restore/cond_queue.csv"
 fi
 
+# Picks a different script in $FUZZER's own volume dir (e.g. run_taint.sh
+# instead of run.sh) -- see entrypoint.sh's own RUN_SCRIPT comment. Only
+# forwarded when set, so an unset launcher gets entrypoint.sh's normal
+# run.sh default untouched.
+if [ ! -z "$RUN_SCRIPT" ]; then
+    flag_run_script_env="--env=RUN_SCRIPT=$RUN_SCRIPT"
+fi
+
 VOLUME_PATH="$(realpath "$UNIBENCH/tools/volume")"
 flag_volume_extra="--volume=$VOLUME_PATH:/volume"
 
@@ -103,7 +111,7 @@ if [ -t 1 ]; then
         --env=FUZZER="$FUZZER" --env=TARGET="$TARGET" \
         --env=FUZZARGS="$FUZZARGS" \
         --env=TIMEOUT="$TIMEOUT" \
-        $flag_seed_env $flag_queue_env \
+        $flag_seed_env $flag_queue_env $flag_run_script_env \
         $flag_aff $flag_user $flag_name $flag_ep "$IMG_NAME"
 else
     echo_time "Running in non-interactive mode (no TTY)"
@@ -112,7 +120,7 @@ else
         --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --ulimit core=0 \
         --env=FUZZER="$FUZZER" --env=TARGET="$TARGET" \
         --env=FUZZARGS="$FUZZARGS" --env=TIMEOUT="$TIMEOUT" \
-        $flag_seed_env $flag_queue_env \
+        $flag_seed_env $flag_queue_env $flag_run_script_env \
         --network=none \
         $flag_aff $flag_user $flag_name $flag_ep "$IMG_NAME"
     )
