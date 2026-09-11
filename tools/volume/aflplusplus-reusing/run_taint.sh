@@ -8,12 +8,14 @@
 # - env ARGS_STR: extra arguments to pass to the program
 ##
 #
-# Seed-scan-only companion to ./run.sh: instead of running afl-fuzz, runs
-# reusing-taint-worker in its -S (seed-scan) mode against $SEED, once, and
-# exits -- no queue/, no campaign, nothing kept running. Meant to be
-# launched ahead of time (RUN_SCRIPT=run_taint.sh, see entrypoint.sh) so
-# the resulting cache already exists by the time a real campaign's
-# ./run.sh + reusing-taint-worker -c (see there) points at it for the same
+# Seed-scan companion to ./run.sh: instead of running afl-fuzz, runs
+# afl-taint-scan against $SEED once and exits -- no queue/, no
+# campaign, nothing kept running. That is now all the worker does; it used
+# to have a live mode that watched a running campaign's queue, and
+# analyzing what a campaign discovers belongs to afl-fuzz itself instead.
+# Launched ahead of time (RUN_SCRIPT=run_taint.sh, see entrypoint.sh) so the
+# resulting pool already exists by the time a campaign's ./run.sh passes it
+# to afl-fuzz -r (via <target>_TAINT_DIR, see tools/run.sh) for the same
 # $SEED. Reuses start.sh's existing $SEED -> /customized_seed mount and
 # $SHARED -> /unibench_shared mount unchanged -- this script only differs
 # from ./run.sh in which binary it execs and that it's a one-shot batch job,
@@ -77,4 +79,4 @@ else
 fi
 
 echo "Seed-scan mode: $SEED -> $CACHE_DIR (target: $TARGET)"
-reusing-taint-worker -S "$SEED" -o "$CACHE_DIR" -- "$DTAINT_BIN" "${ARGS[@]}" 2>&1
+afl-taint-scan -S "$SEED" -o "$CACHE_DIR" -- "$DTAINT_BIN" "${ARGS[@]}" 2>&1

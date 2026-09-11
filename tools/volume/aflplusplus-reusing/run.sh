@@ -40,7 +40,7 @@ if [ -z "$ARGS_STR" ]; then
     ARGS_STR=""
 fi
 
-# afl-fuzz -r's value: this target's taint pool (reusing-taint-worker's
+# afl-fuzz -r's value: this target's taint pool (afl-taint-scan's
 # value_pool.dict / unsolved_condition cache), mounted read-only at /taint by
 # start.sh from the captainrc's <target>_TAINT_DIR. tools/run.sh already
 # refuses to launch a campaign for this fuzzer without one, so reaching here
