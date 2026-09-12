@@ -3,7 +3,7 @@
 # COPY paths below need the Reusing-unibench_build/ prefix.
 #
 # AFL++ with cmplog ON, auto-extras OFF -- for exiv2/mp3gain/mujs/imginfo/
-# infotocap/lame/jq only (see
+# infotocap/lame/jq/tiffsplit only (see
 # tools/captainrc_aflpp_autoextras_compare's target set; add more RUN blocks
 # below, mirroring the pattern, if more targets are needed later).
 #
@@ -207,6 +207,13 @@ RUN cd /unibench/jq-1.5 && ./configure --disable-shared &&\
     make clean &&\
     AFL_LLVM_CMPLOG=1 make -j &&\
     cp jq /d/p/aflplusplus-cmplog/cmplog/
+
+RUN cd /unibench/libtiff-3.9.7 && ./autogen.sh && ./configure --disable-shared &&\
+    make -j &&\
+    cp tools/tiffsplit /d/p/aflplusplus-cmplog/ &&\
+    make clean &&\
+    AFL_LLVM_CMPLOG=1 make -j &&\
+    cp tools/tiffsplit /d/p/aflplusplus-cmplog/cmplog/
 
 RUN ls -alh /d/p/aflplusplus-cmplog/ /d/p/aflplusplus-cmplog/cmplog/
 
