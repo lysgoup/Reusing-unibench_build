@@ -93,6 +93,12 @@ if [ ! -z "$TAINT_DIR" ]; then
     flag_taint_env="--env=TAINT_DIR=/taint"
 fi
 
+# Whether the campaign's run.sh should export AFL_DISABLE_TRIM. Forwarded only
+# when the captainrc asked for it, so an unset launcher keeps AFL++'s default.
+if [ ! -z "$DISABLE_TRIM" ]; then
+    flag_trim_env="--env=DISABLE_TRIM=$DISABLE_TRIM"
+fi
+
 # Picks a different script in $FUZZER's own volume dir (e.g. run_taint.sh
 # instead of run.sh) -- see entrypoint.sh's own RUN_SCRIPT comment. Only
 # forwarded when set, so an unset launcher gets entrypoint.sh's normal
@@ -122,7 +128,7 @@ if [ -t 1 ]; then
         --env=FUZZER="$FUZZER" --env=TARGET="$TARGET" \
         --env=FUZZARGS="$FUZZARGS" \
         --env=TIMEOUT="$TIMEOUT" \
-        $flag_seed_env $flag_queue_env $flag_run_script_env $flag_taint_env \
+        $flag_seed_env $flag_queue_env $flag_run_script_env $flag_taint_env $flag_trim_env \
         $flag_aff $flag_user $flag_name $flag_ep "$IMG_NAME"
 else
     echo_time "Running in non-interactive mode (no TTY)"
@@ -131,7 +137,7 @@ else
         --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --ulimit core=0 \
         --env=FUZZER="$FUZZER" --env=TARGET="$TARGET" \
         --env=FUZZARGS="$FUZZARGS" --env=TIMEOUT="$TIMEOUT" \
-        $flag_seed_env $flag_queue_env $flag_run_script_env $flag_taint_env \
+        $flag_seed_env $flag_queue_env $flag_run_script_env $flag_taint_env $flag_trim_env \
         --network=none \
         $flag_aff $flag_user $flag_name $flag_ep "$IMG_NAME"
     )

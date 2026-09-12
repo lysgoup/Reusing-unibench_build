@@ -363,6 +363,12 @@ for FUZZER in "${BUILT_FUZZER[@]}"; do
         # for every fuzzer in TAINT_REQUIRED_FUZZERS, and simply unused (so
         # not mounted) by fuzzers that take no -r.
         export TAINT_DIR="$(get_var_or_default "$TARGET" 'TAINT_DIR')"
+        # Turns AFL_DISABLE_TRIM on inside the container. Set DEFAULT_DISABLE_TRIM
+        # to cover every fuzzer, <fuzzer>_DISABLE_TRIM to override one of them.
+        # aflplusplus-reusing ignores it: afl-fuzz -r disables trimming itself,
+        # because trimming rewrites a queue entry and leaves every offset in its
+        # .dtaint pointing at the wrong byte.
+        export DISABLE_TRIM="$(get_var_or_default "$FUZZER" 'DISABLE_TRIM')"
         DEFAULT_SEED="$(get_var_or_default "$TARGET" 'SEED')"
         echo_time "Starting campaigns for $TARGET $ARGS"
         for ((i=0; i<REPEAT; i++)); do

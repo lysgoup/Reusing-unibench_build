@@ -47,6 +47,14 @@ export AFL_NO_UI=1
 export AFL_MAP_SIZE=256000
 export AFL_DRIVER_DONT_DEFER=1
 
+# Trimming, from the captainrc's DISABLE_TRIM (see tools/run.sh). Turn it on to
+# stay comparable with aflplusplus-reusing, which cannot trim at all: trimming
+# rewrites a queue entry and every offset in its .dtaint would then point at the
+# wrong byte.
+if [ "${DISABLE_TRIM:-0}" = 1 ]; then
+    export AFL_DISABLE_TRIM=1
+fi
+
 # Auto-extras OFF -- baked in for this fuzzer name (see header note).
 export AFL_NO_AUTO_EXTRAS=1
 
