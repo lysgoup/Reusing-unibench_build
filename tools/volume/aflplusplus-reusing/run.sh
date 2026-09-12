@@ -9,14 +9,16 @@
 # - env FUZZARGS: extra arguments to pass to the fuzzer
 ##
 #
-# Mirrors ../aflplusplus/run.sh, but additionally points AFL_DTAINT_BINARY
-# at the real-DFSan companion binary (dfsan_legacy/angora_dfsan_clang.sh's
-# output, built into /d/p/aflplusplus-reusing/dtaint/ by
-# aflplusplus-reusing-target/Dockerfile) -- this is what turns on taint
-# tracking, mirroring how ../angora-reusing/run.sh passes -t "$TRACK_BIN".
-# See src/afl-fuzz-bitmap.c's save_if_interesting() in AFLplusplus_reusing
-# for exactly when this fires (once per newly discovered queue entry, not
-# every execution) and instrumentation/README.dtaint.md /
+# Mirrors ../aflplusplus/run.sh, but passes -r: the taint pool that
+# afl-taint-scan produced for this target ahead of the campaign
+# (value_pool.dict, unsolved_condition and one .dtaint per seed). afl-fuzz
+# reads it in its reusing stage; see src/afl-fuzz-reusing.c. Trimming is off
+# for the whole run, forced by -r, since it would rewrite a queue entry and
+# leave every offset in its .dtaint pointing at the wrong byte.
+#
+# The real-DFSan companion binary is still checked for below: it is what
+# produced the pool, and the in-process analysis that will replace the
+# pre-pass needs it here. See instrumentation/README.dtaint.md /
 # dfsan_legacy/README.md for what it captures.
 
 # Validate required environment variables
@@ -88,10 +90,6 @@ if [ ! -d "$SEED" ]; then
     echo "Error: Seed directory not found at $SEED"
     exit 1
 fi
-
-# This is the switch that turns taint tracking on -- see save_if_interesting()
-# in src/afl-fuzz-bitmap.c (AFLplusplus_reusing).
-export AFL_DTAINT_BINARY="$DTAINT_BIN"
 
 # cmpid -> source-location table (see aflplusplus-reusing-target/Dockerfile's
 # ANGORA_OUTPUT_COND_LOC=1 step and parse_cond_loc.py), built alongside
