@@ -2,7 +2,8 @@
 # Build context: $UNIBENCH/../ (default else-branch in tools/build.sh), i.e.
 # COPY paths below need the Reusing-unibench_build/ prefix.
 #
-# AFL++ with cmplog ON, auto-extras OFF -- for exiv2/mp3gain/mujs/imginfo/infotocap only (see
+# AFL++ with cmplog ON, auto-extras OFF -- for exiv2/mp3gain/mujs/imginfo/
+# infotocap/lame/jq only (see
 # tools/captainrc_aflpp_autoextras_compare's target set; add more RUN blocks
 # below, mirroring the pattern, if more targets are needed later).
 #
@@ -192,6 +193,20 @@ RUN cd /unibench/ncurses-6.1 && ./configure --disable-shared &&\
     make clean &&\
     AFL_LLVM_CMPLOG=1 make -j &&\
     cp progs/tic /d/p/aflplusplus-cmplog/cmplog/infotocap
+
+RUN cd /unibench/lame-3.99.5 && ./configure --disable-shared &&\
+    make -j &&\
+    cp frontend/lame /d/p/aflplusplus-cmplog/ &&\
+    make clean &&\
+    AFL_LLVM_CMPLOG=1 make -j &&\
+    cp frontend/lame /d/p/aflplusplus-cmplog/cmplog/
+
+RUN cd /unibench/jq-1.5 && ./configure --disable-shared &&\
+    make -j &&\
+    cp jq /d/p/aflplusplus-cmplog/ &&\
+    make clean &&\
+    AFL_LLVM_CMPLOG=1 make -j &&\
+    cp jq /d/p/aflplusplus-cmplog/cmplog/
 
 RUN ls -alh /d/p/aflplusplus-cmplog/ /d/p/aflplusplus-cmplog/cmplog/
 
