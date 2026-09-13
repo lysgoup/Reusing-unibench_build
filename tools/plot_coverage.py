@@ -259,6 +259,15 @@ FUZZER_FAMILY_COLORS = (
 )
 DEFAULT_FUZZER_COLOR = 'green'  # forkserver_libafl / forkserver_storfuzz / anything else
 
+# Exact fuzzer names that get their own colour instead of their family's,
+# checked before FUZZER_FAMILY_COLORS. Matched on the whole name, not a
+# substring, so angora-reusing keeps the angora family blue. A colour of its
+# own already tells the line apart, so these draw solid rather than taking a
+# variant dash.
+FUZZER_NAME_COLORS = {
+    'aflplusplus-reusing': 'black',
+}
+
 # The base name of each family gets a solid line; every other variant
 # (-reusing, -storfuzz, -autoextras, ...) gets a dashed line.
 FUZZER_BASE_NAMES = {'angora', 'aflplusplus', 'forkserver_libafl'}
@@ -282,13 +291,15 @@ _FALLBACK_DASH_POOL = tuple(pattern for _, pattern in VARIANT_DASH_PATTERNS)
 def get_fuzzer_style(fuzzer_name):
     """Fixed (color, linestyle) for a fuzzer name, grouped by family."""
     name = fuzzer_name.lower()
-    color = DEFAULT_FUZZER_COLOR
-    for substr, family_color in FUZZER_FAMILY_COLORS:
-        if substr in name:
-            color = family_color
-            break
+    color = FUZZER_NAME_COLORS.get(name)
+    if color is None:
+        color = DEFAULT_FUZZER_COLOR
+        for substr, family_color in FUZZER_FAMILY_COLORS:
+            if substr in name:
+                color = family_color
+                break
 
-    if fuzzer_name in FUZZER_BASE_NAMES:
+    if name in FUZZER_NAME_COLORS or fuzzer_name in FUZZER_BASE_NAMES:
         return color, '-'
 
     for substr, pattern in VARIANT_DASH_PATTERNS:
@@ -601,8 +612,10 @@ def plot_comparison_graphs(graph_dir, data_dir, interval, log_x=False, use_media
             if not only_average:
                 ax.fill_between(time_points, ci_lower, ci_upper, color=color, alpha=0.08)
 
-            # Plot average line
-            ax.plot(time_points, avg_data, color=color, linestyle=linestyle, linewidth=1.2,
+            # Plot average line -- a fuzzer with a colour of its own is the one
+            # under study, so draw it heavier than the others it is compared to.
+            lw = 2.0 if fuzzer_name.lower() in FUZZER_NAME_COLORS else 1.2
+            ax.plot(time_points, avg_data, color=color, linestyle=linestyle, linewidth=lw,
                      label=fuzzer_name)
 
         # Set Y-axis range: fixed bottom margin, top margin scaled to max_val
