@@ -3,7 +3,7 @@
 # COPY paths below need the Reusing-unibench_build/ prefix.
 #
 # AFL++ with cmplog ON, auto-extras OFF -- for exiv2/mp3gain/mujs/imginfo/
-# infotocap/lame/jq/tiffsplit only (see
+# infotocap/lame/jq/tiffsplit/nm/objdump only (see
 # tools/captainrc_aflpp_autoextras_compare's target set; add more RUN blocks
 # below, mirroring the pattern, if more targets are needed later).
 #
@@ -214,6 +214,21 @@ RUN cd /unibench/libtiff-3.9.7 && ./autogen.sh && ./configure --disable-shared &
     make clean &&\
     AFL_LLVM_CMPLOG=1 make -j &&\
     cp tools/tiffsplit /d/p/aflplusplus-cmplog/cmplog/
+
+RUN cd /unibench && rm -rf binutils-5279478-build && mkdir binutils-5279478-build && cd binutils-5279478-build &&\
+    ../binutils-5279478/configure --disable-shared --disable-gdb &&\
+    make -j &&\
+    cp binutils/nm-new /d/p/aflplusplus-cmplog/nm &&\
+    make clean &&\
+    AFL_LLVM_CMPLOG=1 make -j &&\
+    cp binutils/nm-new /d/p/aflplusplus-cmplog/cmplog/nm
+
+RUN cd /unibench/binutils-2.28 && ./configure --disable-shared &&\
+    make -j &&\
+    cp binutils/objdump /d/p/aflplusplus-cmplog/ &&\
+    make clean &&\
+    AFL_LLVM_CMPLOG=1 make -j &&\
+    cp binutils/objdump /d/p/aflplusplus-cmplog/cmplog/
 
 RUN ls -alh /d/p/aflplusplus-cmplog/ /d/p/aflplusplus-cmplog/cmplog/
 
