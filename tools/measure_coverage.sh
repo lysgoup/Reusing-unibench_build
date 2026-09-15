@@ -31,7 +31,7 @@
 # ENV (used as fallback only when the matching option is omitted):
 #   COVERAGE_IMAGE  docker image with the gcov binaries + lcov (default unifuzz/unibench:coverage)
 #   COV_TIMEOUT     per-input replay timeout in seconds (default 5)
-#   COV_RUNS        replays per input (default 8); -r overrides this
+#   COV_RUNS        replays per input (default 1); -r overrides this
 #   PARALLEL        max concurrent containers; -p overrides this
 #   CAPTURE_STRIDE  capture every Nth snapshot (default 1)
 #   FINAL_HTML      1 to also emit a final genhtml report per campaign (default 0)
@@ -48,7 +48,7 @@ INTERVAL="$2"                           # MINUTES (user-facing unit, matches plo
 shift 2
 
 # Optional flags. Precedence: flag value > matching env var > built-in default.
-COV_RUNS="${COV_RUNS:-8}"
+COV_RUNS="${COV_RUNS:-1}"
 PARALLEL_FLAG=""
 TARGET_FILTER=""
 FUZZER_FILTER=""
