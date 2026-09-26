@@ -1,22 +1,20 @@
-# aflplusplus-reusing-target -- unibench targets cross-built for both plain
-# AFL++ (normal afl-clang-fast coverage instrumentation) and the real-DFSan
-# dtaint companion binary (dfsan_legacy/angora_dfsan_clang.sh in
-# /home/yunseo/AFLplusplus_reusing, see that directory's README.md).
+# aflplusplus-reusing-target -- unibench targets built with plain AFL++
+# coverage instrumentation (afl-clang-fast), for afl-fuzz -r.
 #
-# Mirrors angora-reusing-target/Dockerfile's fast/taint two-stage-per-target
-# pattern, but unlike Angora (one compiler wrapper, env-var-switched
-# behavior, same CC path both times) this needs the configure/cmake step
-# re-run between stages: AFL++'s afl-clang-fast and the dtaint wrapper are
-# two genuinely different compiler binaries (different LLVM major versions),
-# so the build system's cached CC= path must actually change, not just the
-# runtime behavior of a single fixed binary.
+# One stage per target, same as aflplusplus/Dockerfile. There used to be a
+# second, real-DFSan stage per target (dfsan_legacy/angora_dfsan_clang.sh)
+# producing a dtaint/ companion binary, from when afl-fuzz did its own taint
+# tracking. It no longer does: -r reads a cache taint_scan built ahead of time
+# from Angora's own track binary, so nothing here ever executed those binaries
+# -- run.sh only stat()ed them -- and the DFSan stage was pure build time
+# (-j1, and an ldd-based abilist gen per target on top).
 #
-# Scoped to tiffsplit only for now (see tools/build.sh's "aflplusplus-
-# reusing" case) -- a validation pass proving the whole pipeline
-# (Dockerfile + build.sh + run.sh) end-to-end on one target before
-# expanding to the rest of unibench's ~18 programs. Extend by copying
-# aflplusplus/Dockerfile's per-target RUN blocks and applying the same
-# fast/dtaint two-stage split shown below.
+# Dropped with them: <name>.cmpid_log.txt, the cmpid -> file:line:col table
+# that ANGORA_OUTPUT_COND_LOC=1 emitted during that stage. Nothing else
+# produces it -- not taint_scan, not angora-reusing-target -- so looking up
+# where a .dtaint record's cmpid lives in the source now needs a one-off
+# build with that env var set. Deliberate: the table cost a full second
+# compile of every target on every image build.
 
 FROM yunseo/aflplusplus-reusing
 
@@ -41,18 +39,9 @@ RUN git clone https://github.com/UNIFUZZ/unibench /unibench &&\
     mv SQLite-8a8ffc86 SQLite-3.8.9 && mv binutils_5279478 binutils-5279478 && mv libtiff-Release-v3-9-7 libtiff-3.9.7 &&\
     ls -alh
 
-RUN mkdir -p /d/p/aflplusplus-reusing/fast /d/p/aflplusplus-reusing/dtaint &&\
+RUN mkdir -p /d/p/aflplusplus-reusing/fast &&\
     apt update && apt install -y nasm libglib2.0-dev gtk-doc-tools libtiff-dev libpng-dev tcl-dev \
       libjpeg-dev zlib1g-dev libjbig-dev autoconf automake libtool gettext autopoint pkg-config
-
-# cmpid -> source-location logging: every dtaint stage below turns on
-# dfsan_legacy's vendored AngoraPass.cc's ANGORA_OUTPUT_COND_LOC=1 (its own
-# unmodified Angora_original feature -- see that file's getInstructionId(),
-# not something added here) and pipes the resulting stderr through this
-# parser, so <name>.cmpid_log.txt lands next to each dtaint/ binary,
-# mapping every cmpid a .dtaint track file can reference back to a
-# file:line:col. See parse_cond_loc.py's own docstring for the wire format.
-COPY Reusing-unibench_build/aflplusplus-reusing-target/parse_cond_loc.py /AFLplusplus/parse_cond_loc.py
 
 # --- tiffsplit (libtiff) ------------------------------------------------
 # Fast (plain AFL++ coverage instrumentation) stage.
@@ -62,62 +51,11 @@ RUN cd /unibench/libtiff-3.9.7 && ./autogen.sh && \
     cp tools/tiffsplit /d/p/aflplusplus-reusing/fast/tiffsplit && \
     make clean
 
-# Auto-generated "discard taint through this library" abilist, covering
-# every shared library the fast build actually links against (jpeg/z/jbig
-# codec support, libc, etc.) except the always-excluded core runtime libs.
-# Mirrors angora-reusing-target/Dockerfile's own recipe exactly (ldd a
-# reference binary, gen_library_abilist.sh each dependency with `discard`)
-# so both fuzzers trace comparisons through the same set of "opaque"
-# libraries for a fair cross-fuzzer taint comparison on the same target/
-# seed -- without this, DFSan traces straight through libjpeg/libz/libjbig
-# internals that Angora deliberately discards, producing a much larger,
-# non-comparable set of cond records.
-# Ubuntu Noble's libjpeg8/libjpeg-turbo8 uses ELF symbol versioning on
-# *every* exported symbol (nm -D shows e.g. `jpeg_read_scanlines@@LIBJPEG_8.0`,
-# confirmed via `nm -D libjpeg.so.8`), unlike libjbig (no versioning at all)
-# or libz (only some newer symbols are versioned). DFSan's abilist matches
-# against the bare function name as it appears in the IR (the version suffix
-# is an ELF/dynamic-linker construct, invisible to the compiler) -- so a
-# generated rule like `fun:jpeg_read_scanlines@@LIBJPEG_8.0=discard` silently
-# never matches, and DFSan then treats the symbol as needing an indirect-call
-# trampoline it has no definition for, breaking the link
-# (`undefined reference to 'dfs$jpeg_read_scanlines'`) -- confirmed exactly
-# reproducing libtiff's own `checking for jpeg_read_scanlines in -ljpeg`
-# configure test standalone. Stripping the `@@VERSION` suffix here fixes
-# this for any similarly-versioned library, not just libjpeg.
-RUN ldd /d/p/aflplusplus-reusing/fast/tiffsplit | grep '\.so' | awk '{print $3}' | grep '\.so' | sort | uniq \
-      | grep -v libgcc_s.so | grep -v libstdc++.so | grep -v libc.so | grep -v libm.so | grep -v libpthread.so \
-      | xargs -i /AFLplusplus/dfsan_legacy/gen_library_abilist.sh '{}' discard \
-      | sed 's/@@[^=]*=/=/' \
-      | { grep -v '^fun:crc32=' || true; } >> /tmp/abilist.txt && \
-    cat /tmp/abilist.txt
-
-# Dtaint (real DFSan, LLVM 11.1.0 toolchain) stage -- re-runs ./configure
-# so the Makefile's CC=/CXX= actually switch to the other toolchain (see
-# this file's header comment for why that's necessary here).
-RUN cd /unibench/libtiff-3.9.7 && \
-    CC=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh \
-    CXX=/AFLplusplus/dfsan_legacy/angora_dfsan_clang++.sh \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt \
-    ./configure --disable-shared && \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt ANGORA_OUTPUT_COND_LOC=1 make -j1 2>/tmp/tiffsplit.cond_loc.raw.log \
-      || (cat /tmp/tiffsplit.cond_loc.raw.log; exit 1) && \
-    python3 /AFLplusplus/parse_cond_loc.py /tmp/tiffsplit.cond_loc.raw.log > /d/p/aflplusplus-reusing/dtaint/tiffsplit.cmpid_log.txt && \
-    rm /tmp/tiffsplit.cond_loc.raw.log && \
-    cp tools/tiffsplit /d/p/aflplusplus-reusing/dtaint/tiffsplit && \
-    make clean
-
 # --- cflow ---------------------------------------------------------------
-# Second target (after tiffsplit) validating the pipeline generalizes --
-# plain autotools build, no external codec/library dependencies, so no new
-# abilist-discard entries are expected beyond what's already in
-# /tmp/abilist.txt.
 # cflow's bundled lib/obstack.c relies on old, lenient C rules for an
 # incompatible function-pointer assignment; AFL++'s LLVM 20 toolchain
-# treats that as a hard error by default (-Wincompatible-function-pointer-
-# types), unlike the LLVM 11 toolchain used for the dtaint stage below,
-# which only warns. Downgrade it back to a warning for both stages for
-# consistency.
+# treats that as a hard error by default
+# (-Wincompatible-function-pointer-types). Downgrade it back to a warning.
 RUN cd /unibench/cflow-1.6 && \
     CC=afl-clang-fast CXX=afl-clang-fast++ \
     CFLAGS="-Wno-error=incompatible-function-pointer-types" \
@@ -126,40 +64,9 @@ RUN cd /unibench/cflow-1.6 && \
     cp src/cflow /d/p/aflplusplus-reusing/fast/cflow && \
     make clean
 
-RUN ldd /d/p/aflplusplus-reusing/fast/cflow | grep '\.so' | awk '{print $3}' | grep '\.so' | sort | uniq \
-      | grep -v libgcc_s.so | grep -v libstdc++.so | grep -v libc.so | grep -v libm.so | grep -v libpthread.so \
-      | xargs -i /AFLplusplus/dfsan_legacy/gen_library_abilist.sh '{}' discard \
-      | sed 's/@@[^=]*=/=/' \
-      | { grep -v '^fun:crc32=' || true; } >> /tmp/abilist.txt && \
-    cat /tmp/abilist.txt
-
-RUN cd /unibench/cflow-1.6 && \
-    CC=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh \
-    CXX=/AFLplusplus/dfsan_legacy/angora_dfsan_clang++.sh \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt \
-    ./configure && \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt ANGORA_OUTPUT_COND_LOC=1 make -j1 2>/tmp/cflow.cond_loc.raw.log \
-      || (cat /tmp/cflow.cond_loc.raw.log; exit 1) && \
-    python3 /AFLplusplus/parse_cond_loc.py /tmp/cflow.cond_loc.raw.log > /d/p/aflplusplus-reusing/dtaint/cflow.cmpid_log.txt && \
-    rm /tmp/cflow.cond_loc.raw.log && \
-    cp src/cflow /d/p/aflplusplus-reusing/dtaint/cflow && \
-    make clean
-
 # ============ remaining unibench targets (mirrors angora-reusing-target/
 # Dockerfile's build recipes 1:1, minus StorFuzz variants which don't apply
 # to AFL++) ============
-#
-# Two structural differences from angora's single-angora-clang approach,
-# both already called out in this file's header comment:
-#  - cmake-based targets need CMakeCache.txt/CMakeFiles wiped before the
-#    dtaint-stage `cmake .` re-run, or cmake keeps using the fast stage's
-#    cached afl-clang-fast compiler path instead of picking up the new
-#    CC=angora_dfsan_clang.sh (autotools' ./configure has no such cache).
-#  - every target gets its own ldd-based abilist-gen step (even ones that
-#    plausibly only link libc/libm/libpthread/libdl, already excluded
-#    below) for uniformity and because /tmp/abilist.txt accumulates across
-#    the whole build -- cheap, and each new target's dtaint stage benefits
-#    from every earlier target's discovered shared-library discard rules.
 
 # --- exiv2 (cmake, C++) --------------------------------------------------
 # src/futils.cpp re-declares strerror_r itself, guarded by
@@ -185,28 +92,6 @@ RUN cd /unibench/exiv2-0.26 && \
     cp bin/exiv2 /d/p/aflplusplus-reusing/fast/exiv2 && \
     make clean
 
-RUN ldd /d/p/aflplusplus-reusing/fast/exiv2 | grep '\.so' | awk '{print $3}' | grep '\.so' | sort | uniq \
-      | grep -v libgcc_s.so | grep -v libstdc++.so | grep -v libc.so | grep -v libm.so | grep -v libpthread.so \
-      | xargs -i /AFLplusplus/dfsan_legacy/gen_library_abilist.sh '{}' discard \
-      | sed 's/@@[^=]*=/=/' \
-      | { grep -v '^fun:crc32=' || true; } >> /tmp/abilist.txt && \
-    cat /tmp/abilist.txt
-
-RUN cd /unibench/exiv2-0.26 && \
-    rm -f CMakeCache.txt && rm -rf CMakeFiles && \
-    CC=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh \
-    CXX=/AFLplusplus/dfsan_legacy/angora_dfsan_clang++.sh \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt \
-    cmake -DEXIV2_ENABLE_SHARED=OFF \
-      -DCMAKE_C_COMPILER=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh \
-      -DCMAKE_CXX_COMPILER=/AFLplusplus/dfsan_legacy/angora_dfsan_clang++.sh . && \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt ANGORA_OUTPUT_COND_LOC=1 make exiv2 -j1 2>/tmp/exiv2.cond_loc.raw.log \
-      || (cat /tmp/exiv2.cond_loc.raw.log; exit 1) && \
-    python3 /AFLplusplus/parse_cond_loc.py /tmp/exiv2.cond_loc.raw.log > /d/p/aflplusplus-reusing/dtaint/exiv2.cmpid_log.txt && \
-    rm /tmp/exiv2.cond_loc.raw.log && \
-    cp bin/exiv2 /d/p/aflplusplus-reusing/dtaint/exiv2 && \
-    make clean
-
 # --- gdk-pixbuf (autotools, C) -------------------------------------------
 RUN cd /unibench/gdk-pixbuf-2.31.1 && \
     CC=afl-clang-fast CXX=afl-clang-fast++ \
@@ -215,49 +100,10 @@ RUN cd /unibench/gdk-pixbuf-2.31.1 && \
     cp gdk-pixbuf/gdk-pixbuf-pixdata /d/p/aflplusplus-reusing/fast/gdk-pixbuf-pixdata && \
     make clean
 
-RUN ldd /d/p/aflplusplus-reusing/fast/gdk-pixbuf-pixdata | grep '\.so' | awk '{print $3}' | grep '\.so' | sort | uniq \
-      | grep -v libgcc_s.so | grep -v libstdc++.so | grep -v libc.so | grep -v libm.so | grep -v libpthread.so \
-      | xargs -i /AFLplusplus/dfsan_legacy/gen_library_abilist.sh '{}' discard \
-      | sed 's/@@[^=]*=/=/' \
-      | { grep -v '^fun:crc32=' || true; } >> /tmp/abilist.txt && \
-    for L in libpng16 libtiff libjpeg; do \
-      F=$(ls /usr/lib/x86_64-linux-gnu/${L}.a /usr/lib/x86_64-linux-gnu/${L}.so /usr/lib/x86_64-linux-gnu/${L}.so.* 2>/dev/null | head -1); \
-      [ -n "$F" ] && /AFLplusplus/dfsan_legacy/gen_library_abilist.sh "$F" discard | sed 's/@@[^=]*=/=/' >> /tmp/abilist.txt; \
-    done && \
-    cat /tmp/abilist.txt
-
-RUN cd /unibench/gdk-pixbuf-2.31.1 && \
-    CC=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh \
-    CXX=/AFLplusplus/dfsan_legacy/angora_dfsan_clang++.sh \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt \
-    ./autogen.sh --enable-static=yes --enable-shared=no --with-included-loaders=yes && \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt ANGORA_OUTPUT_COND_LOC=1 make -j1 2>/tmp/gdk-pixbuf-pixdata.cond_loc.raw.log \
-      || (cat /tmp/gdk-pixbuf-pixdata.cond_loc.raw.log; exit 1) && \
-    python3 /AFLplusplus/parse_cond_loc.py /tmp/gdk-pixbuf-pixdata.cond_loc.raw.log > /d/p/aflplusplus-reusing/dtaint/gdk-pixbuf-pixdata.cmpid_log.txt && \
-    rm /tmp/gdk-pixbuf-pixdata.cond_loc.raw.log && \
-    cp gdk-pixbuf/gdk-pixbuf-pixdata /d/p/aflplusplus-reusing/dtaint/gdk-pixbuf-pixdata && \
-    make clean
-
 # --- jhead (plain make, C) -----------------------------------------------
 RUN cd /unibench/jhead-3.00 && \
     CC=afl-clang-fast make -j && \
     cp jhead /d/p/aflplusplus-reusing/fast/jhead && \
-    make clean
-
-RUN ldd /d/p/aflplusplus-reusing/fast/jhead | grep '\.so' | awk '{print $3}' | grep '\.so' | sort | uniq \
-      | grep -v libgcc_s.so | grep -v libstdc++.so | grep -v libc.so | grep -v libm.so | grep -v libpthread.so \
-      | xargs -i /AFLplusplus/dfsan_legacy/gen_library_abilist.sh '{}' discard \
-      | sed 's/@@[^=]*=/=/' \
-      | { grep -v '^fun:crc32=' || true; } >> /tmp/abilist.txt && \
-    cat /tmp/abilist.txt
-
-RUN cd /unibench/jhead-3.00 && \
-    CC=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt ANGORA_OUTPUT_COND_LOC=1 make -j1 2>/tmp/jhead.cond_loc.raw.log \
-      || (cat /tmp/jhead.cond_loc.raw.log; exit 1) && \
-    python3 /AFLplusplus/parse_cond_loc.py /tmp/jhead.cond_loc.raw.log > /d/p/aflplusplus-reusing/dtaint/jhead.cmpid_log.txt && \
-    rm /tmp/jhead.cond_loc.raw.log && \
-    cp jhead /d/p/aflplusplus-reusing/dtaint/jhead && \
     make clean
 
 # --- lame (autotools, C) --------------------------------------------------
@@ -267,44 +113,10 @@ RUN cd /unibench/lame-3.99.5 && \
     cp frontend/lame /d/p/aflplusplus-reusing/fast/lame && \
     make clean
 
-RUN ldd /d/p/aflplusplus-reusing/fast/lame | grep '\.so' | awk '{print $3}' | grep '\.so' | sort | uniq \
-      | grep -v libgcc_s.so | grep -v libstdc++.so | grep -v libc.so | grep -v libm.so | grep -v libpthread.so \
-      | xargs -i /AFLplusplus/dfsan_legacy/gen_library_abilist.sh '{}' discard \
-      | sed 's/@@[^=]*=/=/' \
-      | { grep -v '^fun:crc32=' || true; } >> /tmp/abilist.txt && \
-    cat /tmp/abilist.txt
-
-RUN cd /unibench/lame-3.99.5 && \
-    CC=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt \
-    ./configure --disable-shared && \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt ANGORA_OUTPUT_COND_LOC=1 make -j1 2>/tmp/lame.cond_loc.raw.log \
-      || (cat /tmp/lame.cond_loc.raw.log; exit 1) && \
-    python3 /AFLplusplus/parse_cond_loc.py /tmp/lame.cond_loc.raw.log > /d/p/aflplusplus-reusing/dtaint/lame.cmpid_log.txt && \
-    rm /tmp/lame.cond_loc.raw.log && \
-    cp frontend/lame /d/p/aflplusplus-reusing/dtaint/lame && \
-    make clean
-
 # --- mp3gain (plain make, C) ----------------------------------------------
 RUN cd /unibench/mp3gain-1.5.2 && sed -i 's/CC=/CC?=/' Makefile && \
     CC=afl-clang-fast make -j && \
     cp mp3gain /d/p/aflplusplus-reusing/fast/mp3gain && \
-    make clean
-
-RUN ldd /d/p/aflplusplus-reusing/fast/mp3gain | grep '\.so' | awk '{print $3}' | grep '\.so' | sort | uniq \
-      | grep -v libgcc_s.so | grep -v libstdc++.so | grep -v libc.so | grep -v libm.so | grep -v libpthread.so \
-      | xargs -i /AFLplusplus/dfsan_legacy/gen_library_abilist.sh '{}' discard \
-      | sed 's/@@[^=]*=/=/' \
-      | { grep -v '^fun:crc32=' || true; } >> /tmp/abilist.txt && \
-    cat /tmp/abilist.txt
-
-RUN cd /unibench/mp3gain-1.5.2 && \
-    CC=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt ANGORA_OUTPUT_COND_LOC=1 make -j1 2>/tmp/mp3gain.cond_loc.raw.log \
-      || (cat /tmp/mp3gain.cond_loc.raw.log; exit 1) && \
-    python3 /AFLplusplus/parse_cond_loc.py /tmp/mp3gain.cond_loc.raw.log > /d/p/aflplusplus-reusing/dtaint/mp3gain.cmpid_log.txt && \
-    rm /tmp/mp3gain.cond_loc.raw.log && \
-    cp mp3gain /d/p/aflplusplus-reusing/dtaint/mp3gain && \
     make clean
 
 # --- swftools (autotools, C, needs -fcommon for old tentative-def style) --
@@ -316,25 +128,6 @@ RUN cd /unibench/swftools-0.9.2/ && \
     cp src/wav2swf /d/p/aflplusplus-reusing/fast/wav2swf && \
     make clean
 
-RUN ldd /d/p/aflplusplus-reusing/fast/wav2swf | grep '\.so' | awk '{print $3}' | grep '\.so' | sort | uniq \
-      | grep -v libgcc_s.so | grep -v libstdc++.so | grep -v libc.so | grep -v libm.so | grep -v libpthread.so \
-      | xargs -i /AFLplusplus/dfsan_legacy/gen_library_abilist.sh '{}' discard \
-      | sed 's/@@[^=]*=/=/' \
-      | { grep -v '^fun:crc32=' || true; } >> /tmp/abilist.txt && \
-    cat /tmp/abilist.txt
-
-RUN cd /unibench/swftools-0.9.2/ && \
-    CC=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh \
-    CXX=/AFLplusplus/dfsan_legacy/angora_dfsan_clang++.sh \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt \
-    CFLAGS="-fcommon" CXXFLAGS="-fcommon" ./configure && \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt ANGORA_OUTPUT_COND_LOC=1 CFLAGS="-fcommon" CXXFLAGS="-fcommon" make -j1 2>/tmp/wav2swf.cond_loc.raw.log \
-      || (cat /tmp/wav2swf.cond_loc.raw.log; exit 1) && \
-    python3 /AFLplusplus/parse_cond_loc.py /tmp/wav2swf.cond_loc.raw.log > /d/p/aflplusplus-reusing/dtaint/wav2swf.cmpid_log.txt && \
-    rm /tmp/wav2swf.cond_loc.raw.log && \
-    cp src/wav2swf /d/p/aflplusplus-reusing/dtaint/wav2swf && \
-    make clean
-
 # --- flvmeta (cmake, C) ---------------------------------------------------
 RUN cd /unibench/flvmeta-1.2.1 && \
     CC=afl-clang-fast cmake . && \
@@ -342,48 +135,11 @@ RUN cd /unibench/flvmeta-1.2.1 && \
     cp src/flvmeta /d/p/aflplusplus-reusing/fast/flvmeta && \
     make clean
 
-RUN ldd /d/p/aflplusplus-reusing/fast/flvmeta | grep '\.so' | awk '{print $3}' | grep '\.so' | sort | uniq \
-      | grep -v libgcc_s.so | grep -v libstdc++.so | grep -v libc.so | grep -v libm.so | grep -v libpthread.so \
-      | xargs -i /AFLplusplus/dfsan_legacy/gen_library_abilist.sh '{}' discard \
-      | sed 's/@@[^=]*=/=/' \
-      | { grep -v '^fun:crc32=' || true; } >> /tmp/abilist.txt && \
-    cat /tmp/abilist.txt
-
-RUN cd /unibench/flvmeta-1.2.1 && \
-    rm -f CMakeCache.txt && rm -rf CMakeFiles && \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt \
-    cmake -DCMAKE_C_COMPILER=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh . && \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt ANGORA_OUTPUT_COND_LOC=1 make -j1 2>/tmp/flvmeta.cond_loc.raw.log \
-      || (cat /tmp/flvmeta.cond_loc.raw.log; exit 1) && \
-    python3 /AFLplusplus/parse_cond_loc.py /tmp/flvmeta.cond_loc.raw.log > /d/p/aflplusplus-reusing/dtaint/flvmeta.cmpid_log.txt && \
-    rm /tmp/flvmeta.cond_loc.raw.log && \
-    cp src/flvmeta /d/p/aflplusplus-reusing/dtaint/flvmeta && \
-    make clean
-
 # --- Bento4 (cmake, C++) ---------------------------------------------------
 RUN cd /unibench/Bento4-1.5.1-628 && \
     CC=afl-clang-fast CXX=afl-clang-fast++ cmake . && \
     make -j && \
     cp mp42aac /d/p/aflplusplus-reusing/fast/mp42aac && \
-    make clean
-
-RUN ldd /d/p/aflplusplus-reusing/fast/mp42aac | grep '\.so' | awk '{print $3}' | grep '\.so' | sort | uniq \
-      | grep -v libgcc_s.so | grep -v libstdc++.so | grep -v libc.so | grep -v libm.so | grep -v libpthread.so \
-      | xargs -i /AFLplusplus/dfsan_legacy/gen_library_abilist.sh '{}' discard \
-      | sed 's/@@[^=]*=/=/' \
-      | { grep -v '^fun:crc32=' || true; } >> /tmp/abilist.txt && \
-    cat /tmp/abilist.txt
-
-RUN cd /unibench/Bento4-1.5.1-628 && \
-    rm -f CMakeCache.txt && rm -rf CMakeFiles && \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt \
-    cmake -DCMAKE_C_COMPILER=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh \
-      -DCMAKE_CXX_COMPILER=/AFLplusplus/dfsan_legacy/angora_dfsan_clang++.sh . && \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt ANGORA_OUTPUT_COND_LOC=1 make -j1 2>/tmp/mp42aac.cond_loc.raw.log \
-      || (cat /tmp/mp42aac.cond_loc.raw.log; exit 1) && \
-    python3 /AFLplusplus/parse_cond_loc.py /tmp/mp42aac.cond_loc.raw.log > /d/p/aflplusplus-reusing/dtaint/mp42aac.cmpid_log.txt && \
-    rm /tmp/mp42aac.cond_loc.raw.log && \
-    cp mp42aac /d/p/aflplusplus-reusing/dtaint/mp42aac && \
     make clean
 
 # --- ncurses (autotools, C) ------------------------------------------------
@@ -402,24 +158,6 @@ RUN cd /unibench/ncurses-6.1 && \
     cp progs/tic /d/p/aflplusplus-reusing/fast/infotocap && \
     make clean
 
-RUN ldd /d/p/aflplusplus-reusing/fast/infotocap | grep '\.so' | awk '{print $3}' | grep '\.so' | sort | uniq \
-      | grep -v libgcc_s.so | grep -v libstdc++.so | grep -v libc.so | grep -v libm.so | grep -v libpthread.so \
-      | xargs -i /AFLplusplus/dfsan_legacy/gen_library_abilist.sh '{}' discard \
-      | sed 's/@@[^=]*=/=/' \
-      | { grep -v '^fun:crc32=' || true; } >> /tmp/abilist.txt && \
-    cat /tmp/abilist.txt
-
-RUN cd /unibench/ncurses-6.1 && \
-    CC=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt \
-    ./configure --disable-shared --without-cxx && \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt ANGORA_OUTPUT_COND_LOC=1 ASAN_OPTIONS="detect_leaks=0" make -j1 2>/tmp/infotocap.cond_loc.raw.log \
-      || (cat /tmp/infotocap.cond_loc.raw.log; exit 1) && \
-    python3 /AFLplusplus/parse_cond_loc.py /tmp/infotocap.cond_loc.raw.log > /d/p/aflplusplus-reusing/dtaint/infotocap.cmpid_log.txt && \
-    rm /tmp/infotocap.cond_loc.raw.log && \
-    cp progs/tic /d/p/aflplusplus-reusing/dtaint/infotocap && \
-    make clean
-
 # --- jq (autotools, C) -----------------------------------------------------
 RUN cd /unibench/jq-1.5 && \
     CC=afl-clang-fast ./configure --disable-shared && \
@@ -427,44 +165,10 @@ RUN cd /unibench/jq-1.5 && \
     cp jq /d/p/aflplusplus-reusing/fast/jq && \
     make clean
 
-RUN ldd /d/p/aflplusplus-reusing/fast/jq | grep '\.so' | awk '{print $3}' | grep '\.so' | sort | uniq \
-      | grep -v libgcc_s.so | grep -v libstdc++.so | grep -v libc.so | grep -v libm.so | grep -v libpthread.so \
-      | xargs -i /AFLplusplus/dfsan_legacy/gen_library_abilist.sh '{}' discard \
-      | sed 's/@@[^=]*=/=/' \
-      | { grep -v '^fun:crc32=' || true; } >> /tmp/abilist.txt && \
-    cat /tmp/abilist.txt
-
-RUN cd /unibench/jq-1.5 && \
-    CC=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt \
-    ./configure --disable-shared && \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt ANGORA_OUTPUT_COND_LOC=1 make -j1 2>/tmp/jq.cond_loc.raw.log \
-      || (cat /tmp/jq.cond_loc.raw.log; exit 1) && \
-    python3 /AFLplusplus/parse_cond_loc.py /tmp/jq.cond_loc.raw.log > /d/p/aflplusplus-reusing/dtaint/jq.cmpid_log.txt && \
-    rm /tmp/jq.cond_loc.raw.log && \
-    cp jq /d/p/aflplusplus-reusing/dtaint/jq && \
-    make clean
-
 # --- mujs (plain make, C) --------------------------------------------------
 RUN cd /unibench/mujs-1.0.2 && \
     CC=afl-clang-fast build=debug make -j && \
     cp build/debug/mujs /d/p/aflplusplus-reusing/fast/mujs && \
-    make clean
-
-RUN ldd /d/p/aflplusplus-reusing/fast/mujs | grep '\.so' | awk '{print $3}' | grep '\.so' | sort | uniq \
-      | grep -v libgcc_s.so | grep -v libstdc++.so | grep -v libc.so | grep -v libm.so | grep -v libpthread.so \
-      | xargs -i /AFLplusplus/dfsan_legacy/gen_library_abilist.sh '{}' discard \
-      | sed 's/@@[^=]*=/=/' \
-      | { grep -v '^fun:crc32=' || true; } >> /tmp/abilist.txt && \
-    cat /tmp/abilist.txt
-
-RUN cd /unibench/mujs-1.0.2 && \
-    CC=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt ANGORA_OUTPUT_COND_LOC=1 build=debug make -j1 2>/tmp/mujs.cond_loc.raw.log \
-      || (cat /tmp/mujs.cond_loc.raw.log; exit 1) && \
-    python3 /AFLplusplus/parse_cond_loc.py /tmp/mujs.cond_loc.raw.log > /d/p/aflplusplus-reusing/dtaint/mujs.cmpid_log.txt && \
-    rm /tmp/mujs.cond_loc.raw.log && \
-    cp build/debug/mujs /d/p/aflplusplus-reusing/dtaint/mujs && \
     make clean
 
 # --- xpdf (cmake, C++) ------------------------------------------------------
@@ -481,48 +185,11 @@ RUN cd /unibench/xpdf-4.00 && \
     cp xpdf/pdftotext /d/p/aflplusplus-reusing/fast/pdftotext && \
     make clean
 
-RUN ldd /d/p/aflplusplus-reusing/fast/pdftotext | grep '\.so' | awk '{print $3}' | grep '\.so' | sort | uniq \
-      | grep -v libgcc_s.so | grep -v libstdc++.so | grep -v libc.so | grep -v libm.so | grep -v libpthread.so \
-      | xargs -i /AFLplusplus/dfsan_legacy/gen_library_abilist.sh '{}' discard \
-      | sed 's/@@[^=]*=/=/' \
-      | { grep -v '^fun:crc32=' || true; } >> /tmp/abilist.txt && \
-    cat /tmp/abilist.txt
-
-RUN cd /unibench/xpdf-4.00 && \
-    rm -f CMakeCache.txt && rm -rf CMakeFiles && \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt CXXFLAGS="-std=gnu++14" \
-    cmake -DCMAKE_C_COMPILER=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh \
-      -DCMAKE_CXX_COMPILER=/AFLplusplus/dfsan_legacy/angora_dfsan_clang++.sh . && \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt ANGORA_OUTPUT_COND_LOC=1 make -j1 2>/tmp/pdftotext.cond_loc.raw.log \
-      || (cat /tmp/pdftotext.cond_loc.raw.log; exit 1) && \
-    python3 /AFLplusplus/parse_cond_loc.py /tmp/pdftotext.cond_loc.raw.log > /d/p/aflplusplus-reusing/dtaint/pdftotext.cmpid_log.txt && \
-    rm /tmp/pdftotext.cond_loc.raw.log && \
-    cp xpdf/pdftotext /d/p/aflplusplus-reusing/dtaint/pdftotext && \
-    make clean
-
 # --- SQLite (autotools, C) --------------------------------------------------
 RUN cd /unibench/SQLite-3.8.9 && \
     CC=afl-clang-fast ./configure --disable-shared && \
     make -j && \
     cp sqlite3 /d/p/aflplusplus-reusing/fast/sqlite3 && \
-    make clean
-
-RUN ldd /d/p/aflplusplus-reusing/fast/sqlite3 | grep '\.so' | awk '{print $3}' | grep '\.so' | sort | uniq \
-      | grep -v libgcc_s.so | grep -v libstdc++.so | grep -v libc.so | grep -v libm.so | grep -v libpthread.so \
-      | xargs -i /AFLplusplus/dfsan_legacy/gen_library_abilist.sh '{}' discard \
-      | sed 's/@@[^=]*=/=/' \
-      | { grep -v '^fun:crc32=' || true; } >> /tmp/abilist.txt && \
-    cat /tmp/abilist.txt
-
-RUN cd /unibench/SQLite-3.8.9 && \
-    CC=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt \
-    ./configure --disable-shared && \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt ANGORA_OUTPUT_COND_LOC=1 ASAN_OPTIONS="detect_leaks=0" make -j1 2>/tmp/sqlite3.cond_loc.raw.log \
-      || (cat /tmp/sqlite3.cond_loc.raw.log; exit 1) && \
-    python3 /AFLplusplus/parse_cond_loc.py /tmp/sqlite3.cond_loc.raw.log > /d/p/aflplusplus-reusing/dtaint/sqlite3.cmpid_log.txt && \
-    rm /tmp/sqlite3.cond_loc.raw.log && \
-    cp sqlite3 /d/p/aflplusplus-reusing/dtaint/sqlite3 && \
     make clean
 
 # --- binutils-5279478 (nested configure, C) --------------------------------
@@ -537,35 +204,6 @@ RUN cd /unibench/binutils-5279478 && \
     cp nm-new /d/p/aflplusplus-reusing/fast/nm && \
     cd /unibench/binutils-5279478 && make distclean 2>/dev/null; true
 
-RUN ldd /d/p/aflplusplus-reusing/fast/nm | grep '\.so' | awk '{print $3}' | grep '\.so' | sort | uniq \
-      | grep -v libgcc_s.so | grep -v libstdc++.so | grep -v libc.so | grep -v libm.so | grep -v libpthread.so \
-      | xargs -i /AFLplusplus/dfsan_legacy/gen_library_abilist.sh '{}' discard \
-      | sed 's/@@[^=]*=/=/' \
-      | { grep -v '^fun:crc32=' || true; } >> /tmp/abilist.txt && \
-    cat /tmp/abilist.txt
-
-RUN cd /unibench/binutils-5279478 && \
-    MAKEINFO=true CC=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt \
-    ./configure --disable-shared --disable-werror --disable-gdb --disable-gdbserver --disable-gold && \
-    for i in bfd libiberty opcodes libctf; do \
-        cd $i && \
-        MAKEINFO=true CC=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh \
-        ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt \
-        ./configure --disable-shared --disable-werror && \
-        ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt ANGORA_OUTPUT_COND_LOC=1 make -j1 2>>/tmp/nm.cond_loc.raw.log && cd ..; \
-    done && \
-    cd binutils && \
-    MAKEINFO=true CC=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt \
-    ./configure --disable-shared --disable-werror && \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt ANGORA_OUTPUT_COND_LOC=1 make nm-new 2>>/tmp/nm.cond_loc.raw.log \
-      || (cat /tmp/nm.cond_loc.raw.log; exit 1) && \
-    python3 /AFLplusplus/parse_cond_loc.py /tmp/nm.cond_loc.raw.log > /d/p/aflplusplus-reusing/dtaint/nm.cmpid_log.txt && \
-    rm /tmp/nm.cond_loc.raw.log && \
-    cp nm-new /d/p/aflplusplus-reusing/dtaint/nm && \
-    cd /unibench/binutils-5279478 && make distclean 2>/dev/null; true
-
 # --- binutils-2.28 (autotools, C, needs flex/bison already in base image) --
 RUN cd /unibench/binutils-2.28 && \
     CC=afl-clang-fast ./configure --disable-shared LEXLIB= && \
@@ -573,31 +211,12 @@ RUN cd /unibench/binutils-2.28 && \
     cp binutils/objdump /d/p/aflplusplus-reusing/fast/objdump && \
     make clean
 
-RUN ldd /d/p/aflplusplus-reusing/fast/objdump | grep '\.so' | awk '{print $3}' | grep '\.so' | sort | uniq \
-      | grep -v libgcc_s.so | grep -v libstdc++.so | grep -v libc.so | grep -v libm.so | grep -v libpthread.so \
-      | xargs -i /AFLplusplus/dfsan_legacy/gen_library_abilist.sh '{}' discard \
-      | sed 's/@@[^=]*=/=/' \
-      | { grep -v '^fun:crc32=' || true; } >> /tmp/abilist.txt && \
-    cat /tmp/abilist.txt
-
-RUN cd /unibench/binutils-2.28 && \
-    find . -name config.cache -delete && \
-    CC=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt \
-    ./configure --disable-shared LEXLIB= && \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt ANGORA_OUTPUT_COND_LOC=1 ASAN_OPTIONS="detect_leaks=0" make -j1 LEXLIB= 2>/tmp/objdump.cond_loc.raw.log \
-      || (cat /tmp/objdump.cond_loc.raw.log; exit 1) && \
-    python3 /AFLplusplus/parse_cond_loc.py /tmp/objdump.cond_loc.raw.log > /d/p/aflplusplus-reusing/dtaint/objdump.cmpid_log.txt && \
-    rm /tmp/objdump.cond_loc.raw.log && \
-    cp binutils/objdump /d/p/aflplusplus-reusing/dtaint/objdump && \
-    make clean
-
 # --- libpcap + tcpdump (autotools, C, sibling-directory auto-discovery) ----
 # tcpdump-4.8.1's configure has an AC_RUN_IFELSE check for a 64-bit printf
 # format specifier whose test programs are bare K&R-style `main()` with no
 # return type -- "implicit int" was only a *warning* when this was
-# written, but modern clang (our afl-clang-fast/angora_dfsan_clang.sh, both
-# recent LLVM) makes it a hard compile error by default, so ALL THREE
+# written, but modern clang (afl-clang-fast, LLVM 20) makes it a hard
+# compile error by default, so ALL THREE
 # candidate test programs (%llx/%Lx/%qx) fail to even compile, and
 # autoconf reports "no" for all of them identically -- including %llx,
 # which is trivially the objectively correct answer on this glibc, proving
@@ -608,76 +227,6 @@ RUN cd /unibench/binutils-2.28 && \
 RUN cd /unibench/libpcap-1.8.1 && CC=afl-clang-fast ./configure --disable-shared && make -j && \
     cd /unibench/tcpdump-4.8.1 && CC=afl-clang-fast CFLAGS="-Wno-error=implicit-int -Wno-error=implicit-function-declaration" ./configure && make -j && \
     cp tcpdump /d/p/aflplusplus-reusing/fast/tcpdump && \
-    make clean && cd /unibench/libpcap-1.8.1 && make clean
-
-RUN ldd /d/p/aflplusplus-reusing/fast/tcpdump | grep '\.so' | awk '{print $3}' | grep '\.so' | sort | uniq \
-      | grep -v libgcc_s.so | grep -v libstdc++.so | grep -v libc.so | grep -v libm.so | grep -v libpthread.so \
-      | xargs -i /AFLplusplus/dfsan_legacy/gen_library_abilist.sh '{}' discard \
-      | sed 's/@@[^=]*=/=/' \
-      | { grep -v '^fun:crc32=' || true; } >> /tmp/abilist.txt && \
-    cat /tmp/abilist.txt
-
-# libpcap's own portability.h unconditionally #defines a compat strlcpy()
-# macro whenever HAVE_STRLCPY isn't set (libpcap's 2016-era build never
-# actually checks for it at all, at any compiler), rewriting calls to
-# strlcpy(x,y,z) as (strncpy((x),(y),(z)), ...). Modern glibc (2.38+, this
-# base image) added a *real* strlcpy() to string.h, so the macro's text
-# substitution corrupts string.h's own declaration line wherever the
-# literal token "strlcpy" appears in it ("expected ')'", "conflicting
-# types for 'strncpy'"). Real, reproducible clang-version difference: the
-# identical source+flags compile clean under afl-clang-fast (LLVM 20) but
-# fail here under angora_dfsan_clang.sh (LLVM 11) -- apparently LLVM 11 and
-# 20 disagree on whether glibc's feature-test gating exposes the new
-# strlcpy declaration at all. Forcing -DHAVE_STRLCPY makes portability.h
-# skip the conflicting macro and just use the real (and, since glibc 2.38,
-# genuinely available) libc strlcpy -- the semantically correct outcome
-# either way, not merely a suppression.
-RUN cd /unibench/libpcap-1.8.1 && \
-    CC=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt \
-    CFLAGS="-DHAVE_STRLCPY" \
-    ./configure --disable-shared && ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt ANGORA_OUTPUT_COND_LOC=1 make -j1 2>>/tmp/tcpdump.cond_loc.raw.log && \
-    # tcpdump's own AC_CHECK_FUNC(...) synthetic conftests (bare extern
-    # declaration + address-of, no real header) fail to link against the
-    # just-built, DFSan-compiled libpcap.a -- these are all real functions
-    # with a body there, so DFSan renames each definition to "dfs$name"
-    # (same as sqlite3_step etc. earlier in this file); autoconf's tiny
-    # synthetic probes don't reference them the way real application code
-    # (tcpdump.c, compiled through the same wrapper) does, so the probes
-    # alone fail even though the real functions are genuinely present and
-    # real usage links fine -- confirmed the hard way: leaving these
-    # undetected made tcpdump fall back to ITS OWN bundled compat shims
-    # (missing/dlnames.c, missing/datalinks.c, pcap_dump_ftell.c), which
-    # then collided at link time with the real (mis-detected-as-absent)
-    # definitions already in libpcap.a ("multiple definition of
-    # `dfs$pcap_list_datalinks'" etc). Pre-seeding every affected cache
-    # variable with the answer we already know to be true (standard
-    # autoconf override mechanism) skips the unreliable probes instead of
-    # chasing exactly why their narrower synthetic form doesn't resolve
-    # the symbol. (pcap_set_parser_debug/pcap_debug/yydebug/
-    # pcap_set_optimizer_debug are correctly "no" for a normal non-debug
-    # libpcap build -- left alone.)
-    cd /unibench/tcpdump-4.8.1 && \
-    CC=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt \
-    CFLAGS="-Wno-error=implicit-int -Wno-error=implicit-function-declaration" \
-    ac_cv_func_pcap_loop=yes \
-    ac_cv_func_pcap_list_datalinks=yes \
-    ac_cv_func_pcap_set_datalink=yes \
-    ac_cv_func_pcap_datalink_name_to_val=yes \
-    ac_cv_func_pcap_datalink_val_to_name=yes \
-    ac_cv_func_pcap_datalink_val_to_description=yes \
-    ac_cv_func_pcap_breakloop=yes \
-    ac_cv_func_pcap_dump_ftell=yes \
-    ac_cv_func_pcap_create=yes \
-    ac_cv_func_pcap_findalldevs=yes \
-    ac_cv_func_pcap_dump_flush=yes \
-    ac_cv_func_pcap_lib_version=yes \
-    ac_cv_func_pcap_setdirection=yes \
-    ac_cv_func_pcap_set_immediate_mode=yes \
-    ./configure && ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt ANGORA_OUTPUT_COND_LOC=1 make -j1 2>>/tmp/tcpdump.cond_loc.raw.log \
-      || (cat /tmp/tcpdump.cond_loc.raw.log; exit 1) && \
-    python3 /AFLplusplus/parse_cond_loc.py /tmp/tcpdump.cond_loc.raw.log > /d/p/aflplusplus-reusing/dtaint/tcpdump.cmpid_log.txt && \
-    rm /tmp/tcpdump.cond_loc.raw.log && \
-    cp tcpdump /d/p/aflplusplus-reusing/dtaint/tcpdump && \
     make clean && cd /unibench/libpcap-1.8.1 && make clean
 
 # --- jasper (cmake, C, JPEG2000) --------------------------------------------
@@ -692,25 +241,6 @@ RUN cd /unibench/jasper-2.0.12 && \
     cmake -DJAS_ENABLE_SHARED=OFF -DALLOW_IN_SOURCE_BUILD=ON . && \
     make -j && \
     cp src/appl/imginfo /d/p/aflplusplus-reusing/fast/imginfo && \
-    make clean
-
-RUN ldd /d/p/aflplusplus-reusing/fast/imginfo | grep '\.so' | awk '{print $3}' | grep '\.so' | sort | uniq \
-      | grep -v libgcc_s.so | grep -v libstdc++.so | grep -v libc.so | grep -v libm.so | grep -v libpthread.so \
-      | xargs -i /AFLplusplus/dfsan_legacy/gen_library_abilist.sh '{}' discard \
-      | sed 's/@@[^=]*=/=/' \
-      | { grep -v '^fun:crc32=' || true; } >> /tmp/abilist.txt && \
-    cat /tmp/abilist.txt
-
-RUN cd /unibench/jasper-2.0.12 && \
-    rm -f CMakeCache.txt && rm -rf CMakeFiles && \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt CFLAGS="-Wno-error=implicit-function-declaration" \
-    cmake -DJAS_ENABLE_SHARED=OFF -DALLOW_IN_SOURCE_BUILD=ON \
-      -DCMAKE_C_COMPILER=/AFLplusplus/dfsan_legacy/angora_dfsan_clang.sh . && \
-    ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt ANGORA_OUTPUT_COND_LOC=1 make -j1 2>/tmp/imginfo.cond_loc.raw.log \
-      || (cat /tmp/imginfo.cond_loc.raw.log; exit 1) && \
-    python3 /AFLplusplus/parse_cond_loc.py /tmp/imginfo.cond_loc.raw.log > /d/p/aflplusplus-reusing/dtaint/imginfo.cmpid_log.txt && \
-    rm /tmp/imginfo.cond_loc.raw.log && \
-    cp src/appl/imginfo /d/p/aflplusplus-reusing/dtaint/imginfo && \
     make clean
 
 # ffmpeg and libpng are intentionally skipped for now: angora's ffmpeg

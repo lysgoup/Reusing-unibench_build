@@ -81,8 +81,8 @@ if [ -z "$SEED" ]; then
 fi
 
 # Set up fuzzer-specific run script. RUN_SCRIPT lets a launcher pick a
-# different script in the same $FUZZER's volume dir (e.g. run_taint.sh
-# for a seed-scan-only invocation) while still getting this file's own
+# different script in the same $FUZZER's volume dir while still getting
+# this file's own
 # TARGET -> ARGS_STR/SEED resolution below -- defaults to the normal
 # fuzzing entry point, unchanged for every existing caller.
 RUN_SCRIPT="${RUN_SCRIPT:-run.sh}"

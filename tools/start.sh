@@ -82,7 +82,7 @@ if [ ! -z "$QUEUE_FILE" ]; then
     flag_queue_env="--env=QUEUE_FILE=/restore/cond_queue.csv"
 fi
 
-# Taint pool dir for afl-fuzz -r (afl-taint-scan's value_pool.dict /
+# Taint pool dir for afl-fuzz -r (taint_scan's value_pool.dict /
 # unsolved_condition cache for this target). Mounted read-only: one pool is
 # shared by every trial of every campaign against the same seed set, so no
 # container has any business writing to it. TAINT_DIR arrives as a host path
@@ -99,8 +99,8 @@ if [ ! -z "$DISABLE_TRIM" ]; then
     flag_trim_env="--env=DISABLE_TRIM=$DISABLE_TRIM"
 fi
 
-# Picks a different script in $FUZZER's own volume dir (e.g. run_taint.sh
-# instead of run.sh) -- see entrypoint.sh's own RUN_SCRIPT comment. Only
+# Picks a different script in $FUZZER's own volume dir instead of run.sh
+# -- see entrypoint.sh's own RUN_SCRIPT comment. Only
 # forwarded when set, so an unset launcher gets entrypoint.sh's normal
 # run.sh default untouched.
 if [ ! -z "$RUN_SCRIPT" ]; then

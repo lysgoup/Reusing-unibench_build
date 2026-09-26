@@ -140,7 +140,7 @@ elif [ "$FUZZER" = "aflplusplus-reusing" ]; then
 
     # Same hash-based rebuild-skip caching as angora-reusing above, split
     # along the same fault line: "does this affect how targets get
-    # COMPILED" (afl-cc/instrumentation passes/dfsan_legacy toolchain --
+    # COMPILED" (afl-cc/instrumentation passes --
     # expensive, rebuilds the base image + all 19 unibench targets) vs
     # "does this only affect the fuzzer ORCHESTRATOR itself"
     # (src/afl-fuzz*.c + afl-main.c -- cheap, only an afl-fuzz rebuild
@@ -161,8 +161,7 @@ elif [ "$FUZZER" = "aflplusplus-reusing" ]; then
     # being true (afl-fuzz.h starts declaring something instrumentation-
     # side code needs), this needs to come back out.
     #
-    # include/reusing_*.h (reusing_pool.h, reusing_pattern.h,
-    # reusing_filter.h, reusing_dtaint_reader.h) joined the same way, same
+    # include/reusing_*.h joined the same way, same
     # verification: `grep -rl` for each header's own name across the whole
     # repo turns up only src/afl-fuzz-reusing-*.c and afl-fuzz.h/afl-fuzz.c
     # as includers -- nothing under instrumentation/ or elsewhere. Their
@@ -174,8 +173,8 @@ elif [ "$FUZZER" = "aflplusplus-reusing" ]; then
     # rather than trying to enumerate every toolchain-relevant path --
     # safer default is "unrecognized file changed -> full rebuild" than
     # risking a silently-stale target image.
-    FUZZER_FILE_LIST=$(cd "$AFLPP_REUSING_ROOT" && git ls-files | grep -E '^src/afl-fuzz|^src/afl-main\.c$|^include/afl-fuzz\.h$|^include/reusing_|^src/afl-taint-scan\.c$')
-    TOOLCHAIN_FILE_LIST=$(cd "$AFLPP_REUSING_ROOT" && git ls-files | grep -vE '^src/afl-fuzz|^src/afl-main\.c$|^include/afl-fuzz\.h$|^include/reusing_|^src/afl-taint-scan\.c$')
+    FUZZER_FILE_LIST=$(cd "$AFLPP_REUSING_ROOT" && git ls-files | grep -E '^src/afl-fuzz|^src/afl-main\.c$|^include/afl-fuzz\.h$|^include/reusing_')
+    TOOLCHAIN_FILE_LIST=$(cd "$AFLPP_REUSING_ROOT" && git ls-files | grep -vE '^src/afl-fuzz|^src/afl-main\.c$|^include/afl-fuzz\.h$|^include/reusing_')
     FUZZER_HASH=$(cd "$AFLPP_REUSING_ROOT" && echo "$FUZZER_FILE_LIST" | tar -cf - -T - 2>/dev/null | sha256sum | cut -d' ' -f1)
     TOOLCHAIN_HASH=$(cd "$AFLPP_REUSING_ROOT" && echo "$TOOLCHAIN_FILE_LIST" | tar -cf - -T - 2>/dev/null | sha256sum | cut -d' ' -f1)
 
@@ -189,14 +188,12 @@ elif [ "$FUZZER" = "aflplusplus-reusing" ]; then
     TARGET_IMG="unifuzz/unibench:aflplusplus-reusing-target"
 
     if [ "$TOOLCHAIN_HASH" != "$CACHED_TOOLCHAIN_HASH" ] || [ -z "$(docker images -q "$TARGET_IMG")" ]; then
-        echo_time "Toolchain/instrumentation/dfsan_legacy changed (or target image missing). Full rebuild (base + all 19 unibench targets + fuzzer)."
+        echo_time "Toolchain/instrumentation changed (or target image missing). Full rebuild (base + all 19 unibench targets + fuzzer)."
         set -x
-        # 1) toolchain base: AFL++'s own LLVM 20 build plus the vendored real
-        #    DFSan (LLVM 11.1.0) dtaint toolchain -- see AFLplusplus_reusing's
-        #    Dockerfile and dfsan_legacy/README.md.
+        # 1) toolchain base: AFL++'s own LLVM 20 build -- see
+        #    AFLplusplus_reusing's Dockerfile.
         docker build -t "yunseo/aflplusplus-reusing" "$AFLPP_REUSING_ROOT"
-        # 2) target image: unibench targets cross-built fast/ (afl-clang-fast)
-        #    + dtaint/ (dfsan_legacy/angora_dfsan_clang.sh).
+        # 2) target image: unibench targets built into fast/ (afl-clang-fast).
         docker build -t "$TARGET_IMG" -f "$UNIBENCH/aflplusplus-reusing-target/Dockerfile" "$UNIBENCH/../"
         # 3) fuzzer_only: rebuild just afl-fuzz on top of the target image.
         docker build -t "$IMG_NAME" -f "$UNIBENCH/aflplusplus-reusing_fuzzer_only/Dockerfile" "$AFLPP_REUSING_ROOT"
