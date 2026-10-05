@@ -209,6 +209,15 @@ RUN apt-get update && apt-get install -y flex bison
 # StorFuzz-instrumented "fast" binaries are placed here (alongside the existing fast/ and taint/)
 RUN mkdir -p /d/p/angora/fast_storfuzz
 
+# objdump opts its track build out of angora-clang's -fno-builtin
+# (ANGORA_KEEP_BUILTINS=1, see that file's comment). It is the one target
+# measured where blocking every builtin costs more than the extra magic
+# checks return: cond counts rise, and borderline seeds fall past the track
+# timeout (24% -> 30% of the corpus), which is what made the -fno-builtin
+# scan of it unusable. The bcmp cmpfn rule still applies and recovers the
+# longer memcmp(..)==0 comparisons here. Only the track binary opts out --
+# fast/ and fast_storfuzz keep the same flags as every other target so the
+# coverage-side comparison stays like-for-like.
 RUN cd /unibench/binutils-2.28 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./configure --disable-shared LEXLIB= &&\
     make -j LEXLIB= &&\
     cp binutils/objdump /d/p/angora/fast/ &&\
@@ -216,7 +225,7 @@ RUN cd /unibench/binutils-2.28 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./configu
     ANGORA_USE_STORFUZZ=1 USE_FAST=1 make -j LEXLIB= &&\
     cp binutils/objdump /d/p/angora/fast_storfuzz/ &&\
     make clean &&\
-    USE_TRACK=1 ASAN_OPTIONS="detect_leaks=0" make -j LEXLIB= &&\
+    ANGORA_KEEP_BUILTINS=1 USE_TRACK=1 ASAN_OPTIONS="detect_leaks=0" make -j LEXLIB= &&\
     cp binutils/objdump /d/p/angora/taint/ &&\
     make clean
 
