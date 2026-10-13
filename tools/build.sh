@@ -209,6 +209,45 @@ elif [ "$FUZZER" = "aflplusplus-reusing" ]; then
     else
         echo_time "No changes detected. Skipping build."
     fi
+elif [ "$FUZZER" = "reusing-scanner" ]; then
+    # Not a fuzzer: it scans a corpus once and writes the cache afl-fuzz -r
+    # reads. Lives in its own repository, hence REUSING_SCANNER_ROOT.
+    # angora-reusing's first two steps, without the fuzzer_only third.
+    REUSING_SCANNER_ROOT="${REUSING_SCANNER_ROOT:-/home/yunseo/Reusing_scanner}"
+
+    if [ ! -d "$REUSING_SCANNER_ROOT" ]; then
+        echo_time "REUSING_SCANNER_ROOT ($REUSING_SCANNER_ROOT) not found."
+        echo_time "       Set it to wherever Reusing_scanner is checked out."
+        exit 1
+    fi
+
+    # Both inputs, not just the scanner repo: step 2's Dockerfile and ffmpeg's
+    # abilist live here, and editing either would otherwise report "no changes"
+    # and hand back a stale target image. One hash, not two -- there is no
+    # "only the fuzzer changed" for a scan.
+    SCANNER_HASH=$( { cd "$REUSING_SCANNER_ROOT" && git ls-files | tar -cf - -T - 2>/dev/null;
+                      cd "$UNIBENCH" && tar -cf - reusing-scanner-target 2>/dev/null; } \
+                    | sha256sum | cut -d' ' -f1)
+
+    CACHE_DIR="$REUSING_SCANNER_ROOT/_build_cache"
+    mkdir -p "$CACHE_DIR"
+    CACHED_SCANNER_HASH=""
+    [ -f "$CACHE_DIR/scanner.hash" ] && CACHED_SCANNER_HASH=$(cat "$CACHE_DIR/scanner.hash")
+
+    TARGET_IMG="unifuzz/unibench:reusing-scanner"
+
+    if [ "$SCANNER_HASH" != "$CACHED_SCANNER_HASH" ] || [ -z "$(docker images -q "$TARGET_IMG")" ]; then
+        echo_time "Scanner or its toolchain changed (or target image missing). Rebuild."
+        set -x
+        # 1) toolchain + taint_scan
+        docker build -t "reusing-scanner" "$REUSING_SCANNER_ROOT"
+        # 2) the unibench targets built with it
+        docker build -t "$TARGET_IMG" -f "$UNIBENCH/reusing-scanner-target/Dockerfile" "$UNIBENCH/../"
+        set +x
+        echo "$SCANNER_HASH" > "$CACHE_DIR/scanner.hash"
+    else
+        echo_time "No changes detected. Skipping build."
+    fi
 else
     set -x
     docker build -t "$IMG_NAME" -f "$UNIBENCH/$FUZZER/Dockerfile" "$UNIBENCH/../"
