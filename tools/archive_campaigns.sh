@@ -217,6 +217,12 @@ done
 # timing; the developer measures the archived data later, on demand.
 if [ "$MEASURE_ON_FINISH" -eq 1 ]; then
     echo_time "Archiving done. Starting offline coverage measurement + visualization..."
-    "$UNIBENCH/tools/measure_coverage.sh" "$WORKDIR" "$INTERVAL" || \
+    # MEASURE_ARGS passes measure_coverage.sh's own flags through -- -c above
+    # all, since its CPU pinning has no environment fallback and without it
+    # the measurement runs unpinned at $(nproc) parallelism, which on a shared
+    # machine walks straight over whatever core budget the campaigns were held
+    # to. Word-split on purpose: it is a flag string, not one argument.
+    # shellcheck disable=SC2086
+    "$UNIBENCH/tools/measure_coverage.sh" "$WORKDIR" "$INTERVAL" ${MEASURE_ARGS:-} || \
         echo_time "WARNING: offline measurement/visualization failed (archives are intact; retry manually)."
 fi
