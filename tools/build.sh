@@ -94,8 +94,11 @@ elif [ "$FUZZER" = "aflplusplus-reusing" ]; then
     # risking a silently-stale target image.
     FUZZER_FILE_LIST=$(cd "$AFLPP_REUSING_ROOT" && git ls-files | grep -E '^src/afl-fuzz|^src/afl-main\.c$|^include/afl-fuzz\.h$|^include/reusing_')
     TOOLCHAIN_FILE_LIST=$(cd "$AFLPP_REUSING_ROOT" && git ls-files | grep -vE '^src/afl-fuzz|^src/afl-main\.c$|^include/afl-fuzz\.h$|^include/reusing_')
-    FUZZER_HASH=$(cd "$AFLPP_REUSING_ROOT" && echo "$FUZZER_FILE_LIST" | tar -cf - -T - 2>/dev/null | sha256sum | cut -d' ' -f1)
-    TOOLCHAIN_HASH=$(cd "$AFLPP_REUSING_ROOT" && echo "$TOOLCHAIN_FILE_LIST" | tar -cf - -T - 2>/dev/null | sha256sum | cut -d' ' -f1)
+    # Hash file *contents*, not a tar of them: tar records mtimes, so a
+    # fresh clone of an unchanged tree hashes differently and forces a
+    # pointless full rebuild.
+    FUZZER_HASH=$(cd "$AFLPP_REUSING_ROOT" && echo "$FUZZER_FILE_LIST" | tr '\n' '\0' | xargs -0 -r sha256sum | sha256sum | cut -d' ' -f1)
+    TOOLCHAIN_HASH=$(cd "$AFLPP_REUSING_ROOT" && echo "$TOOLCHAIN_FILE_LIST" | tr '\n' '\0' | xargs -0 -r sha256sum | sha256sum | cut -d' ' -f1)
 
     CACHE_DIR="$AFLPP_REUSING_ROOT/_build_cache"
     mkdir -p "$CACHE_DIR"
@@ -143,8 +146,8 @@ elif [ "$FUZZER" = "reusing-scanner" ]; then
     # abilist live here, and editing either would otherwise report "no changes"
     # and hand back a stale target image. One hash, not two -- there is no
     # "only the fuzzer changed" for a scan.
-    SCANNER_HASH=$( { cd "$REUSING_SCANNER_ROOT" && git ls-files | tar -cf - -T - 2>/dev/null;
-                      cd "$UNIBENCH" && tar -cf - reusing-scanner-target 2>/dev/null; } \
+    SCANNER_HASH=$( { cd "$REUSING_SCANNER_ROOT" && git ls-files -z | xargs -0 -r sha256sum;
+                      cd "$UNIBENCH" && git ls-files -z reusing-scanner-target | xargs -0 -r sha256sum; } \
                     | sha256sum | cut -d' ' -f1)
 
     CACHE_DIR="$REUSING_SCANNER_ROOT/_build_cache"
