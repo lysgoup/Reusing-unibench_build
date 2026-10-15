@@ -51,15 +51,6 @@ RUN apt-get update && apt-get install -y clang-format-${LLVM_VERSION}
 
 WORKDIR /root
 
-# The LibAFL fork that carries the reusing stage. Its
-# fuzzers/reusing_forkserver_cc is forkserver_libafl_cc at the same base commit
-# (bb579e62, v0.13.1) with this directory's three patches already applied and
-# committed, so there is nothing to `git apply` here -- see that directory's
-# README for the provenance and how to re-check it against the baseline arm.
-RUN git clone https://github.com/lysgoup/LibAFL_reusing.git /root/LibAFL-reusing && \
-    cd /root/LibAFL-reusing && \
-    git checkout storfuzz-comparison
-
 # unibench setup
 RUN git clone https://github.com/UNIFUZZ/unibench && \
     cd unibench && \
@@ -77,6 +68,19 @@ ENV LIBAFL_CXX=/root/LibAFL-reusing/fuzzers/reusing_forkserver_cc/target/release
 ENV FUZZER=/root/LibAFL-reusing/fuzzers/reusing_forkserver_cc/target/release/reusing_forkserver_cc
 ENV TARGET_DIR=/root/unibench
 ENV SEED_DIR=/root/projects/seed_corpus
+
+# The LibAFL fork that carries the reusing stage. Its
+# fuzzers/reusing_forkserver_cc is forkserver_libafl_cc at the same base commit
+# (bb579e62, v0.13.1) with this directory's three patches already applied and
+# committed, so there is nothing to `git apply` here -- see that directory's
+# README for the provenance and how to re-check it against the baseline arm.
+#
+# COPYed from the build context, not cloned, the same way the AFL++ arm builds
+# from AFLplusplus_reusing. A clone would need a push before anything local
+# could be tested, and worse, docker caches the `git clone` layer on its
+# command string alone -- new commits upstream would be served from an old
+# layer and the build would succeed with the wrong fuzzer.
+COPY LibAFL_reusing /root/LibAFL-reusing
 
 # Build LibAFL toolchain
 WORKDIR /root/LibAFL-reusing/fuzzers/reusing_forkserver_cc

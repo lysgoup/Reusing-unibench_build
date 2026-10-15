@@ -133,6 +133,62 @@ elif [ "$FUZZER" = "aflplusplus-reusing" ]; then
     else
         echo_time "No changes detected. Skipping build."
     fi
+elif [ "$FUZZER" = "forkserver_libafl_reusing" ]; then
+    echo_time "Special build for forkserver_libafl_reusing"
+    # The LibAFL fork, a sibling submodule of this one under the umbrella repo.
+    LIBAFL_REUSING_ROOT="${LIBAFL_REUSING_ROOT:-$UNIBENCH/../LibAFL_reusing}"
+
+    if [ ! -d "$LIBAFL_REUSING_ROOT" ]; then
+        echo_time "LIBAFL_REUSING_ROOT ($LIBAFL_REUSING_ROOT) not found."
+        exit 1
+    fi
+
+    # Same split as aflplusplus-reusing above, along the same fault line: does
+    # this change how TARGETS get compiled, or only the fuzzer binary?
+    #
+    # The targets are built by libafl_cc and linked against
+    # libforkserver_libafl_cc.a, which come from the fuzzer package's
+    # src/bin/libafl_cc.rs and src/lib.rs plus the libafl_* crates. The reusing
+    # stage is fuzzers/reusing_core, wired in from src/main.rs -- neither ends
+    # up in a target. So those two paths are the fuzzer-only group and
+    # everything else forces a full rebuild, which is the safe default for a
+    # file nobody classified.
+    FUZZER_ONLY_RE='^fuzzers/reusing_core/|^fuzzers/reusing_forkserver_cc/src/main\.rs$'
+    FUZZER_FILE_LIST=$(cd "$LIBAFL_REUSING_ROOT" && git ls-files | grep -E "$FUZZER_ONLY_RE")
+    TOOLCHAIN_FILE_LIST=$(cd "$LIBAFL_REUSING_ROOT" && git ls-files | grep -vE "$FUZZER_ONLY_RE" | while read -r f; do [ -f "$f" ] && printf '%s\n' "$f"; done)
+    FUZZER_HASH=$(cd "$LIBAFL_REUSING_ROOT" && echo "$FUZZER_FILE_LIST" | tr '\n' '\0' | xargs -0 -r sha256sum | sha256sum | cut -d' ' -f1)
+    # The target Dockerfile is an input too: editing it would otherwise report
+    # "no changes" and hand back a stale image.
+    TOOLCHAIN_HASH=$( { cd "$LIBAFL_REUSING_ROOT" && echo "$TOOLCHAIN_FILE_LIST" | tr '\n' '\0' | xargs -0 -r sha256sum;
+                        cd "$UNIBENCH" && git ls-files -z forkserver_libafl_reusing-target | xargs -0 -r sha256sum; } \
+                      | sha256sum | cut -d' ' -f1)
+
+    CACHE_DIR="$LIBAFL_REUSING_ROOT/_build_cache"
+    mkdir -p "$CACHE_DIR"
+    CACHED_TOOLCHAIN_HASH=""
+    CACHED_FUZZER_HASH=""
+    [ -f "$CACHE_DIR/libafl_toolchain.hash" ] && CACHED_TOOLCHAIN_HASH=$(cat "$CACHE_DIR/libafl_toolchain.hash")
+    [ -f "$CACHE_DIR/libafl_fuzzer.hash" ] && CACHED_FUZZER_HASH=$(cat "$CACHE_DIR/libafl_fuzzer.hash")
+
+    TARGET_IMG="unifuzz/unibench:forkserver_libafl_reusing-target"
+
+    if [ "$TOOLCHAIN_HASH" != "$CACHED_TOOLCHAIN_HASH" ] || [ -z "$(docker images -q "$TARGET_IMG")" ]; then
+        echo_time "Toolchain/instrumentation changed (or target image missing). Full rebuild (LibAFL + all unibench targets + fuzzer)."
+        set -x
+        docker build -t "$TARGET_IMG" -f "$UNIBENCH/forkserver_libafl_reusing-target/Dockerfile" "$UNIBENCH/../"
+        docker build -t "$IMG_NAME" -f "$UNIBENCH/forkserver_libafl_reusing_fuzzer_only/Dockerfile" "$UNIBENCH/../"
+        set +x
+        echo "$TOOLCHAIN_HASH" > "$CACHE_DIR/libafl_toolchain.hash"
+        echo "$FUZZER_HASH" > "$CACHE_DIR/libafl_fuzzer.hash"
+    elif [ "$FUZZER_HASH" != "$CACHED_FUZZER_HASH" ] || [ -z "$(docker images -q "$IMG_NAME")" ]; then
+        echo_time "Only the reusing stage changed. Rebuilding the fuzzer binary only."
+        set -x
+        docker build -t "$IMG_NAME" -f "$UNIBENCH/forkserver_libafl_reusing_fuzzer_only/Dockerfile" "$UNIBENCH/../"
+        set +x
+        echo "$FUZZER_HASH" > "$CACHE_DIR/libafl_fuzzer.hash"
+    else
+        echo_time "No changes detected. Skipping build."
+    fi
 elif [ "$FUZZER" = "reusing-scanner" ]; then
     # Not a fuzzer: it scans a corpus once and writes the cache afl-fuzz -r
     # reads. Its own repository, a sibling submodule of this one.
