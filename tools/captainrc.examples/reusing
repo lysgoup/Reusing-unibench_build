@@ -1,0 +1,31 @@
+# Reusing-arm campaign: aflplusplus-reusing / forkserver_libafl_reusing vs
+# their baselines. Identical to the other templates except the mandatory
+# taint cache: run.sh refuses to start a reusing fuzzer without a TAINT_DIR
+# whose directory exists (a wrong path would silently degrade to a baseline).
+# The cache comes from the scanner:
+#   FUZZER=reusing-scanner ./build.sh    # once, builds the scan image
+#   (run taint_scan over the seed corpus -> value_pool.dict,
+#    unsolved_condition, <seed>.dtaint in one output dir per target)
+# Usage: cp to ../captainrc_myrun, fill paths, ./run.sh captainrc_myrun
+
+WORKDIR=/path/to/experiment_workdir
+REPEAT=5
+TIMEOUT=24h
+WORKER_POOL="$(seq 0 11)"
+
+FUZZERS=(aflplusplus-reusing aflplusplus)
+aflplusplus_reusing_TARGETS=(exiv2 mp3gain)
+aflplusplus_TARGETS=(exiv2 mp3gain)
+
+exiv2_SEED=/path/to/seeds/exiv2
+mp3gain_SEED=/path/to/seeds/mp3gain
+
+# taint_scan output dir per target (value_pool.dict + unsolved_condition +
+# *.dtaint), mounted read-only at /taint. <target>_TAINT_DIR, or a bare
+# TAINT_DIR to cover every target.
+exiv2_TAINT_DIR=/path/to/taint_cache/exiv2
+mp3gain_TAINT_DIR=/path/to/taint_cache/mp3gain
+
+# afl-fuzz -r disables trimming by itself (trimming would invalidate .dtaint
+# offsets); DISABLE_TRIM only matters for other AFL++ arms if you want parity.
+#DEFAULT_DISABLE_TRIM=1

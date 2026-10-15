@@ -1,0 +1,23 @@
+# Saturation-corpus GENERATING run: fuzz long enough that coverage saturates,
+# then keep the final queue as the seed corpus for later experiments.
+# Usage: cp to ../captainrc_myrun, fill paths, then
+#   screen -dmS archiver bash -c './archive_campaigns.sh <WORKDIR> 15 480; exec bash'
+#   ./run.sh captainrc_myrun
+# Afterwards merge the per-trial queues into one corpus:
+#   ./merge_saturated_seed.sh <WORKDIR>/ar/<fuzzer>/<target>     # per fuzzer
+#   ./merge_saturated_seed_cross_fuzzer.sh <WORKDIR>             # across fuzzers
+
+WORKDIR=/path/to/saturation_workdir
+REPEAT=5
+
+# No TIMEOUT: archive_campaigns.sh ends each campaign at INTERVAL*MAX_ITERATIONS
+# (e.g. 15min x 480 = 5 days). Without the archiver nothing stops these.
+
+WORKER_POOL="$(seq 0 11)"
+
+FUZZERS=(forkserver_libafl)
+forkserver_libafl_TARGETS=(exiv2 mp3gain mujs pdftotext)
+
+# Tar each campaign's FINAL queue to ar/.../base.tar.gz when it ends, so a
+# later saturation_experiment run can reuse it directly as its iter_0000 base.
+SATURATION_GEN=1

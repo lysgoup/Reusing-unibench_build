@@ -1,0 +1,38 @@
+# Saturated-seed EXPERIMENT: fuzz FROM a saturated corpus (made by a
+# saturation_gen run + merge_saturated_seed.sh). Campaign length is enforced
+# by archive_campaigns.sh, not TIMEOUT.
+# Usage: cp to ../captainrc_myrun, fill paths, then (archiver FIRST -- it
+# idles until campaigns appear; attaching late skews the first snapshot):
+#   screen -dmS archiver bash -c './archive_campaigns.sh <WORKDIR> 15 96; exec bash'
+#   ./run.sh captainrc_myrun
+# 15min x 96 iterations = 24h per campaign.
+
+WORKDIR=/path/to/experiment_workdir
+REPEAT=5
+
+# Pool smaller than fuzzers x targets x REPEAT is fine here: the archiver
+# kills finished campaigns, freeing cores for the next wave. Restart the
+# archiver for later waves -- it self-terminates when every campaign it can
+# currently see is done.
+WORKER_POOL="$(seq 0 11)"
+
+# Install each campaign's seed corpus as its iter_0000.tar.gz baseline and
+# make archive_queue.sh archive only post-start deltas. Without this, the
+# first snapshot swallows the whole dry-run queue and the trial's baseline
+# is inflated against its siblings.
+SATURATION_MODE=1
+
+FUZZERS=(forkserver_libafl forkserver_storfuzz)
+forkserver_libafl_TARGETS=(exiv2 mp3gain mujs pdftotext)
+forkserver_storfuzz_TARGETS=(exiv2 mp3gain mujs pdftotext)
+
+# The merged saturated corpora (merge_saturated_seed.sh output dirs).
+SEED_BASE=/path/to/seed/<saturation_run>/ar/<fuzzer>
+exiv2_SEED=$SEED_BASE/exiv2/saturated_seed
+mp3gain_SEED=$SEED_BASE/mp3gain/saturated_seed
+mujs_SEED=$SEED_BASE/mujs/saturated_seed
+pdftotext_SEED=$SEED_BASE/pdftotext/saturated_seed
+
+# Optional: take the iter_0000 base from somewhere other than the seed dir,
+# e.g. a base.tar.gz written by a SATURATION_GEN run:
+#exiv2_BASE=/path/to/ar/<fuzzer>/exiv2/0/base.tar.gz

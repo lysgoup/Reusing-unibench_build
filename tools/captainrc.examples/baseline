@@ -1,0 +1,20 @@
+# Baseline campaign: fixed TIMEOUT, seeds from the image or a custom dir.
+# Usage: cp to ../captainrc_myrun, fill paths, ./run.sh captainrc_myrun
+
+WORKDIR=/path/to/experiment_workdir
+REPEAT=5
+TIMEOUT=24h
+
+# CPU ids to hand out, one per campaign. Size it >= the number of concurrent
+# campaigns you want; leftover campaigns wait for a freed core.
+WORKER_POOL="$(seq 0 11)"
+
+FUZZERS=(forkserver_libafl forkserver_storfuzz)
+forkserver_libafl_TARGETS=(exiv2 mp3gain pdftotext)
+forkserver_storfuzz_TARGETS=(exiv2 mp3gain pdftotext)
+
+# Optional: custom seed dirs (default: the image-internal corpus).
+# Target names with hyphens turn into underscores in the variable name.
+#exiv2_SEED=/path/to/seeds/exiv2
+#mp3gain_SEED=/path/to/seeds/mp3gain
+#pdftotext_SEED=/path/to/seeds/pdftotext

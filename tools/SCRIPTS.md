@@ -73,6 +73,11 @@ Docker 이미지: `unifuzz/unibench:<fuzzer>`, `unifuzz/unibench:coverage`
 
 `run.sh`가 소싱하는 Bash 형식의 설정 파일. 캠페인의 핵심 파라미터를 정의한다.
 
+> 로컬 captainrc들은 머신별 경로가 박혀 있어 gitignore 대상이다. 커밋되는
+> 것은 `tools/captainrc.examples/`의 용도별 템플릿(baseline / saturation_gen /
+> saturation_experiment / reusing)뿐이며, 전체 변수 레퍼런스도 그쪽 README에
+> 있다. 새 서버에서는 템플릿을 복사해 경로만 채우면 된다.
+
 #### 필수 변수
 
 | 변수 | 설명 |

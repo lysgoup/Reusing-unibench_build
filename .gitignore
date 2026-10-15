@@ -1,2 +1,6 @@
 _*
+# Live campaign configs are machine-local (paths, core allocations) and stay
+# untracked; the purpose-named templates under captainrc.examples/ are the
+# shareable, committed form.
 *captainrc*
+!captainrc.examples/
