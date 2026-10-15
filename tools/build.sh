@@ -50,8 +50,8 @@ elif [ "$FUZZER" = "aflplusplus" ]; then
     sync_aflplusplus_tags
 elif [ "$FUZZER" = "aflplusplus-reusing" ]; then
     echo_time "Special build for aflplusplus-reusing"
-    # The AFL++ fork is the superproject this repo is a submodule of.
-    AFLPP_REUSING_ROOT="${AFLPP_REUSING_ROOT:-$UNIBENCH/..}"
+    # The AFL++ fork, a sibling submodule of this repo under the umbrella.
+    AFLPP_REUSING_ROOT="${AFLPP_REUSING_ROOT:-$UNIBENCH/../AFLplusplus_reusing}"
 
     if [ ! -d "$AFLPP_REUSING_ROOT" ]; then
         echo_time "AFLPP_REUSING_ROOT ($AFLPP_REUSING_ROOT) not found."
@@ -93,10 +93,12 @@ elif [ "$FUZZER" = "aflplusplus-reusing" ]; then
     # safer default is "unrecognized file changed -> full rebuild" than
     # risking a silently-stale target image.
     FUZZER_FILE_LIST=$(cd "$AFLPP_REUSING_ROOT" && git ls-files | grep -E '^src/afl-fuzz|^src/afl-main\.c$|^include/afl-fuzz\.h$|^include/reusing_')
-    TOOLCHAIN_FILE_LIST=$(cd "$AFLPP_REUSING_ROOT" && git ls-files | grep -vE '^src/afl-fuzz|^src/afl-main\.c$|^include/afl-fuzz\.h$|^include/reusing_')
+    TOOLCHAIN_FILE_LIST=$(cd "$AFLPP_REUSING_ROOT" && git ls-files | grep -vE '^src/afl-fuzz|^src/afl-main\.c$|^include/afl-fuzz\.h$|^include/reusing_' | while read -r f; do [ -f "$f" ] && printf '%s\n' "$f"; done)
     # Hash file *contents*, not a tar of them: tar records mtimes, so a
     # fresh clone of an unchanged tree hashes differently and forces a
-    # pointless full rebuild.
+    # pointless full rebuild. `git ls-files` also lists gitlinks (this repo
+    # has nine upstream submodules), which are directories on disk, so they
+    # are filtered out rather than handed to sha256sum.
     FUZZER_HASH=$(cd "$AFLPP_REUSING_ROOT" && echo "$FUZZER_FILE_LIST" | tr '\n' '\0' | xargs -0 -r sha256sum | sha256sum | cut -d' ' -f1)
     TOOLCHAIN_HASH=$(cd "$AFLPP_REUSING_ROOT" && echo "$TOOLCHAIN_FILE_LIST" | tr '\n' '\0' | xargs -0 -r sha256sum | sha256sum | cut -d' ' -f1)
 
