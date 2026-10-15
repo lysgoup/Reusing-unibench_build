@@ -3,19 +3,39 @@
 ##
 # Usage:
 #   ./measure_memory.sh <container_name_or_id>
-#   ./measure_memory.sh               # 실행 중인 angora 컨테이너 자동 탐지
+#   ./measure_memory.sh               # 실행 중인 캠페인 컨테이너 자동 탐지
 ##
 
 # ── 컨테이너 결정 ──────────────────────────────────────────────
+# 자동 탐지는 이미지로 찾는다. start.sh가 붙이는 이름은
+# <fuzzer>-<target>-<nanos>라 퍼저 이름을 열거해야 하는데, 팔이 늘고 줄 때마다
+# 여기가 낡는다 (angora 팔로 하드코딩돼 있던 것이 그래서 죽었다).
+# 캠페인 컨테이너는 전부 unifuzz/unibench:<fuzzer> 이미지에서 뜨므로 그쪽이
+# 안정적이다. coverage 이미지는 퍼저가 아니라 측정 컨테이너라 뺀다.
 if [ -n "$1" ]; then
     CID="$1"
 else
-    CID=$(docker ps --format '{{.Names}}' | grep angora | head -1)
-    if [ -z "$CID" ]; then
-        echo "Error: 실행 중인 angora 컨테이너를 찾을 수 없습니다."
+    # --filter ancestor=... 는 쓰지 않는다: 태그 없는 'unifuzz/unibench'를
+    # docker가 ':latest'로 해석해 한 건도 못 잡을 수 있다. Image 컬럼을 직접
+    # 거르는 쪽이 태그 해석에 기대지 않아 안전하다.
+    mapfile -t CANDIDATES < <(
+        docker ps --format '{{.Names}}\t{{.Image}}' \
+            | awk -F'\t' '$2 ~ /^unifuzz\/unibench:/ && $2 != "unifuzz/unibench:coverage" { print $1 }'
+    )
+
+    if [ "${#CANDIDATES[@]}" -eq 0 ]; then
+        echo "Error: 실행 중인 캠페인 컨테이너(unifuzz/unibench:*)를 찾을 수 없습니다."
+        echo "Usage: $0 <container_name_or_id>"
+        exit 1
+    elif [ "${#CANDIDATES[@]}" -gt 1 ]; then
+        # 여러 개일 때 조용히 하나를 고르면 엉뚱한 캠페인을 재게 된다.
+        echo "Error: 실행 중인 캠페인 컨테이너가 ${#CANDIDATES[@]}개입니다. 하나를 지정하세요."
+        printf '  %s\n' "${CANDIDATES[@]}"
         echo "Usage: $0 <container_name_or_id>"
         exit 1
     fi
+
+    CID="${CANDIDATES[0]}"
     echo "[자동 탐지] 컨테이너: $CID"
 fi
 
