@@ -304,7 +304,7 @@ trap cleanup EXIT
 # Fuzzers whose volume run.sh passes `afl-fuzz -r <taint pool dir>` and so
 # cannot start without one. A list rather than a single name so a second
 # reuse variant only has to be added here.
-TAINT_REQUIRED_FUZZERS=(aflplusplus-reusing)
+TAINT_REQUIRED_FUZZERS=(aflplusplus-reusing forkserver_libafl_reusing)
 
 # Resolve -r's value per (fuzzer, target) from the captainrc and bail out NOW
 # if a campaign that needs one is missing it. Checked here, ahead of
