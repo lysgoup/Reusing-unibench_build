@@ -20,6 +20,7 @@ configs survive in git history (removed from tracking 2026-10; `git log --all
 | `baseline` | Ordinary fixed-length campaign: fuzzers run for `TIMEOUT`, live coverage or post-hoc measurement. |
 | `saturation_gen` | Generate a saturated corpus: long run whose final queue becomes the seed for later experiments (`SATURATION_GEN=1`). |
 | `saturation_experiment` | Fuzz **from** a saturated corpus (`SATURATION_MODE=1`); campaign length is enforced by `archive_campaigns.sh`, not `TIMEOUT`. |
+| `scan` | Not a campaign: `reusing-scanner` builds the taint cache (`value_pool.dict`, `unsolved_condition`, `*.dtaint`) that a reusing arm then reads with `-r`. |
 | `reusing` | Any reusing-arm fuzzer (`aflplusplus-reusing`, `forkserver_libafl_reusing`): same as the others plus the mandatory `TAINT_DIR`. |
 
 ## Knob reference

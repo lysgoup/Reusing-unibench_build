@@ -1,0 +1,58 @@
+# Taint SCAN, not a fuzzing campaign: reusing-scanner runs taint_scan once over
+# a seed corpus and writes the cache a reusing arm later reads with -r.
+# Usage: cp to ../captainrc_myscan, fill paths, ./run.sh captainrc_myscan
+#
+# Output lands in
+#     $WORKDIR/cache/reusing-scanner/<target>/0/findings/
+# as value_pool.dict, unsolved_condition and one <seed>.dtaint per seed. That
+# directory is what a reusing captainrc then points <target>_TAINT_DIR at.
+#
+# The .dtaint files are keyed by SEED FILENAME, so scan exactly the directory
+# the campaign will be seeded from. Re-merging a corpus after scanning it
+# renumbers the files and silently invalidates every offset -- see
+# merge_saturated_seed.sh.
+
+WORKDIR=/path/to/scan_workdir
+
+# A scan is one pass over the corpus; a second trial would redo identical work.
+REPEAT=1
+
+# No TIMEOUT: the scan ends when the corpus is done. Cutting it short leaves a
+# partial pool, which is worse than no pool -- it looks valid.
+WORKER_POOL="$(seq 0 3)"
+
+FUZZERS=(reusing-scanner)
+
+# Only what reusing-scanner-target/Dockerfile actually builds. Check with:
+#   docker run --rm --entrypoint sh unifuzz/unibench:reusing-scanner -c 'ls /d/p/taint'
+reusing_scanner_TARGETS=(cflow)
+
+# The corpus to scan. For a saturated-seed experiment this is the same
+# <target>_SEED the fuzzing captainrc uses.
+cflow_SEED=/path/to/seed/<run>/ar/<fuzzer>/cflow/saturated_seed
+
+# Notes
+#
+# - REPEAT/TIMEOUT/FUZZARGS are ignored by tools/volume/reusing-scanner/run.sh
+#   itself; REPEAT is honoured by run.sh's loop, hence REPEAT=1 above.
+# - No TAINT_DIR here: this is what *produces* one.
+# - Scan cost is per seed and target-dependent (measured: mujs 0.16 s, tcpdump
+#   0.47 s, jq 0.74 s, nm 1.8 s, sqlite3 6.3 s, cflow 20 s with -fno-builtin
+#   on). Time a handful of seeds before committing to a whole corpus.
+# - A target with no @@ in its args (sqlite3) is fed on stdin automatically:
+#   taint_scan sets is_stdin = !has_input_arg (scanner/src/command.rs:159).
+#   Nothing extra to configure.
+# - A target the image does not carry dies at once with "Track binary not
+#   found: /d/p/taint/<target>". Adding one means editing
+#   reusing-scanner-target/Dockerfile and rebuilding (hours).
+# - Seeds whose track run exceeds the time limit are dropped with "Crash or
+#   hang while tracking! -- Timeout" and counted in the summary as "N without
+#   usable taint". The DFSan binary is far slower than the original, so large
+#   inputs are the usual casualties.
+#
+# For a one-off scan of a small directory, skipping the harness is simpler:
+#
+#   docker run --rm -v /host/seeds:/seed:ro -v /host/out:/out \
+#     --entrypoint /reusing-scanner/bin/taint_scan \
+#     unifuzz/unibench:reusing-scanner \
+#     -i /seed -o /out -t /d/p/taint/cflow -- /d/p/fast/cflow @@
