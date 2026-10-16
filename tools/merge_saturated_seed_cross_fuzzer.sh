@@ -124,7 +124,10 @@ for target in "${!all_targets[@]}"; do
                     cp "$f" "$dest/$new_name"
                     counter=$((counter + 1))
                 fi
-            done < <(find "$queue_dir" -maxdepth 1 -type f ! -name '.*' 2>/dev/null)
+            # Sorted for the same reason as merge_saturated_seed.sh: the
+            # id:NNNNNN assigned here is the key a taint scan's .dtaint files
+            # carry, so it must be reproducible across runs.
+            done < <(find "$queue_dir" -maxdepth 1 -type f ! -name '.*' 2>/dev/null | sort)
         done
     done
     shopt -u nullglob

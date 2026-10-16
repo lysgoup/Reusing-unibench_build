@@ -56,7 +56,11 @@ for run_id in 0 1 2 3 4; do
             cp "$f" "$DEST/$new_name"
             counter=$((counter + 1))
         fi
-    done < <(find "$queue_dir" -maxdepth 1 -type f ! -name '.*' 2>/dev/null)
+    # Sorted: the id:NNNNNN a file gets here is what a later taint scan keys
+    # its <name>.dtaint by, so the mapping has to come out the same every time
+    # this runs over the same queues. Unsorted find returns readdir order,
+    # which is stable in practice on ext4 but is not promised.
+    done < <(find "$queue_dir" -maxdepth 1 -type f ! -name '.*' 2>/dev/null | sort)
 done
 
 duplicates=$((total - counter))
