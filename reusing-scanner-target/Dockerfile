@@ -84,3 +84,20 @@ RUN cd /unibench/ffmpeg-4.0.1 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     export ANGORA_TAINT_RULE_LIST=/tmp/abilist_ffmpeg.txt &&\
     USE_TRACK=1 make -j$(nproc) &&\
     cp ffmpeg_g /d/p/taint/ffmpeg && make clean
+
+# --- jq --------------------------------------------------------------------
+# Keeps -fno-builtin: measured on the AFL++ corpora at 0.74 s per seed, well
+# inside the track timeout, and jq's comparisons are exactly the kind the flag
+# recovers (its lexer compares literal keywords).
+RUN cd /unibench/jq-1.5 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./configure --disable-shared &&\
+    make -j && cp jq /d/p/fast/ && make clean &&\
+    USE_TRACK=1 make -j &&\
+    cp jq /d/p/taint/ && make clean
+
+# --- lame ------------------------------------------------------------------
+# Keeps -fno-builtin as well; never measured here, so if its scan turns out to
+# be timeout-heavy the way cflow's was, this is the line to revisit.
+RUN cd /unibench/lame-3.99.5 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./configure --disable-shared &&\
+    make -j && cp frontend/lame /d/p/fast/ && make clean &&\
+    USE_TRACK=1 make -j &&\
+    cp frontend/lame /d/p/taint/ && make clean
