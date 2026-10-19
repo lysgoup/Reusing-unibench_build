@@ -189,6 +189,65 @@ elif [ "$FUZZER" = "forkserver_libafl_reusing" ]; then
     else
         echo_time "No changes detected. Skipping build."
     fi
+elif [ "$FUZZER" = "forkserver_libafl_cmplog" ]; then
+    echo_time "Special build for forkserver_libafl_cmplog"
+    # Same LibAFL fork as the reusing arm; the crate is fuzzers/cmplog_forkserver_cc.
+    LIBAFL_REUSING_ROOT="${LIBAFL_REUSING_ROOT:-$UNIBENCH/../LibAFL_reusing}"
+
+    if [ ! -d "$LIBAFL_REUSING_ROOT" ]; then
+        echo_time "LIBAFL_REUSING_ROOT ($LIBAFL_REUSING_ROOT) not found."
+        exit 1
+    fi
+
+    # Same split as forkserver_libafl_reusing above. The cmplog pipeline lives
+    # entirely in the crate's src/main.rs; the target binaries come from
+    # src/bin/libafl_cc.rs + src/lib.rs (main builds, via the reusing arm's
+    # base image) and from AFL++ at the commit pinned in the target Dockerfile
+    # (cmplog builds). So main.rs alone is the fuzzer-only group.
+    FUZZER_ONLY_RE='^fuzzers/cmplog_forkserver_cc/src/main\.rs$'
+    # `|| true`: with the crate not yet committed, git ls-files matches
+    # nothing and a bare grep's exit 1 would kill the script under -e.
+    FUZZER_FILE_LIST=$(cd "$LIBAFL_REUSING_ROOT" && git ls-files | grep -E "$FUZZER_ONLY_RE" || true)
+    TOOLCHAIN_FILE_LIST=$(cd "$LIBAFL_REUSING_ROOT" && git ls-files | grep -vE "$FUZZER_ONLY_RE" | while read -r f; do [ -f "$f" ] && printf '%s\n' "$f"; done)
+    FUZZER_HASH=$(cd "$LIBAFL_REUSING_ROOT" && echo "$FUZZER_FILE_LIST" | tr '\n' '\0' | xargs -0 -r sha256sum | sha256sum | cut -d' ' -f1)
+    TOOLCHAIN_HASH=$( { cd "$LIBAFL_REUSING_ROOT" && echo "$TOOLCHAIN_FILE_LIST" | tr '\n' '\0' | xargs -0 -r sha256sum;
+                        cd "$UNIBENCH" && git ls-files -z forkserver_libafl_cmplog-target | xargs -0 -r sha256sum; } \
+                      | sha256sum | cut -d' ' -f1)
+
+    CACHE_DIR="$LIBAFL_REUSING_ROOT/_build_cache"
+    mkdir -p "$CACHE_DIR"
+    CACHED_TOOLCHAIN_HASH=""
+    CACHED_FUZZER_HASH=""
+    [ -f "$CACHE_DIR/cmplog_toolchain.hash" ] && CACHED_TOOLCHAIN_HASH=$(cat "$CACHE_DIR/cmplog_toolchain.hash")
+    [ -f "$CACHE_DIR/cmplog_fuzzer.hash" ] && CACHED_FUZZER_HASH=$(cat "$CACHE_DIR/cmplog_fuzzer.hash")
+
+    TARGET_IMG="unifuzz/unibench:forkserver_libafl_cmplog-target"
+
+    # The target image FROMs the reusing arm's target image, so that one has
+    # to exist first; its own branch above builds it when it is missing.
+    if [ -z "$(docker images -q unifuzz/unibench:forkserver_libafl_reusing-target)" ]; then
+        echo_time "Base image unifuzz/unibench:forkserver_libafl_reusing-target missing."
+        echo_time "Build the reusing arm first: FUZZER=forkserver_libafl_reusing ./build.sh"
+        exit 1
+    fi
+
+    if [ "$TOOLCHAIN_HASH" != "$CACHED_TOOLCHAIN_HASH" ] || [ -z "$(docker images -q "$TARGET_IMG")" ]; then
+        echo_time "Toolchain/instrumentation changed (or target image missing). Full rebuild (AFL++ + cmplog targets + fuzzer)."
+        set -x
+        docker build -t "$TARGET_IMG" -f "$UNIBENCH/forkserver_libafl_cmplog-target/Dockerfile" "$UNIBENCH/../"
+        docker build -t "$IMG_NAME" -f "$UNIBENCH/forkserver_libafl_cmplog_fuzzer_only/Dockerfile" "$UNIBENCH/../"
+        set +x
+        echo "$TOOLCHAIN_HASH" > "$CACHE_DIR/cmplog_toolchain.hash"
+        echo "$FUZZER_HASH" > "$CACHE_DIR/cmplog_fuzzer.hash"
+    elif [ "$FUZZER_HASH" != "$CACHED_FUZZER_HASH" ] || [ -z "$(docker images -q "$IMG_NAME")" ]; then
+        echo_time "Only the cmplog pipeline changed. Rebuilding the fuzzer binary only."
+        set -x
+        docker build -t "$IMG_NAME" -f "$UNIBENCH/forkserver_libafl_cmplog_fuzzer_only/Dockerfile" "$UNIBENCH/../"
+        set +x
+        echo "$FUZZER_HASH" > "$CACHE_DIR/cmplog_fuzzer.hash"
+    else
+        echo_time "No changes detected. Skipping build."
+    fi
 elif [ "$FUZZER" = "reusing-scanner" ]; then
     # Not a fuzzer: it scans a corpus once and writes the cache afl-fuzz -r
     # reads. Its own repository, a sibling submodule of this one.
