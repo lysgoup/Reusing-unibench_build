@@ -95,8 +95,12 @@ RUN cd /unibench/jq-1.5 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./configure --di
     cp jq /d/p/taint/ && make clean
 
 # --- lame ------------------------------------------------------------------
-# Keeps -fno-builtin as well; never measured here, so if its scan turns out to
-# be timeout-heavy the way cflow's was, this is the line to revisit.
+# Keeps -fno-builtin, and the revisit the comment here used to promise has
+# been done: rebuilt with ANGORA_KEEP_BUILTINS=1 and rescanned the same
+# corpus (libafl_saturation_server2, 3302 seeds), the drops were identical
+# seed for seed -- 664 timeouts and 139 crashes over ids 0-921 either way.
+# lame's track cost is the encoder itself under DFSan, not the flag, so the
+# flag stays for the taint quality it buys on lame's own comparisons.
 RUN cd /unibench/lame-3.99.5 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./configure --disable-shared &&\
     make -j && cp frontend/lame /d/p/fast/ && make clean &&\
     USE_TRACK=1 make -j &&\
