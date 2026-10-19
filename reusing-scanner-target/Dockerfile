@@ -150,3 +150,64 @@ RUN cd /unibench/xpdf-4.00 && export ANGORA_PASS_LOG_DIR=$(pwd) && cmake . &&\
     make -j && cp xpdf/pdftotext /d/p/fast/ && make clean &&\
     USE_TRACK=1 make -j &&\
     cp xpdf/pdftotext /d/p/taint/ && make clean
+# The four below are the targets a forkserver_libafl saturation run produces
+# corpora for (seed/libafl_saturation_server4). All four keep -fno-builtin;
+# measured on those corpora, per seed and as the share left without usable
+# taint: jhead 2.2 s / 4.5%, imginfo 1.1 s / 5.3%, tiffsplit 32 s / 15%,
+# flvmeta not finished at the time of writing.
+
+# --- tiffsplit (libtiff) ---------------------------------------------------
+# libtiff-Release-v3-9-7 is the name the unibench tarball unpacks to.
+# aflplusplus-reusing-target renames it to libtiff-3.9.7 in its clone step;
+# this image's clone step only renames SQLite, and adding a mv there would
+# invalidate the layer every target above it is built on, so the upstream name
+# is used as-is.
+#
+# Needs zlib on the abilist, the way exiv2 does: libtiff's zip and pixarlog
+# codecs call into the system libz, which DFSan never instrumented, so the
+# track link fails on dfs$inflateInit_ and nine more. Appended here rather
+# than relied on from exiv2's block above, so this one does not break if that
+# block moves or goes; a repeated entry costs nothing. Not --disable-zlib
+# instead: that would drop both codecs and leave the scanned binary parsing a
+# different set of TIFFs than the one being fuzzed.
+#
+# The 32 s per seed is the DFSan decoder, not the flag -- same finding lame
+# and mp3gain record. Rebuilt with ANGORA_KEEP_BUILTINS=1 and re-scanned over
+# ids 2999-3018: 932 s against 930, the same 366 pool entries, the same 3
+# seeds dropped.
+RUN /reusing-scanner/tools/gen_library_abilist.sh /usr/lib/x86_64-linux-gnu/libz.so discard \
+      >> /tmp/abilist.txt &&\
+    cd /unibench/libtiff-Release-v3-9-7 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
+    ./autogen.sh && ./configure --disable-shared &&\
+    make -j && cp tools/tiffsplit /d/p/fast/ && make clean &&\
+    USE_TRACK=1 make -j &&\
+    cp tools/tiffsplit /d/p/taint/ && make clean
+
+# --- jhead -----------------------------------------------------------------
+# CC goes on the make command line, not in the environment: jhead ships a
+# plain Makefile that assigns CC itself, and a makefile assignment beats the
+# environment (command line beats both).
+RUN cd /unibench/jhead-3.00 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
+    make -j CC="$CC" && cp jhead /d/p/fast/ && make clean &&\
+    USE_TRACK=1 make -j CC="$CC" &&\
+    cp jhead /d/p/taint/ && make clean
+
+# --- flvmeta (cmake) -------------------------------------------------------
+# cmake caches the compiler, not USE_TRACK, so the second pass only needs a
+# clean: angora-clang reads USE_TRACK when it is invoked.
+RUN cd /unibench/flvmeta-1.2.1 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
+    cmake . &&\
+    make -j && cp src/flvmeta /d/p/fast/ && make clean &&\
+    USE_TRACK=1 make -j &&\
+    cp src/flvmeta /d/p/taint/ && make clean
+
+# --- imginfo (jasper, cmake) -----------------------------------------------
+# ALLOW_IN_SOURCE_BUILD because the recipe builds in the source tree, as the
+# other blocks do. No -Wno-error=implicit-function-declaration here: that is
+# needed against a modern clang, and this toolchain is LLVM 4.0, which only
+# warns.
+RUN cd /unibench/jasper-2.0.12 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
+    cmake -DJAS_ENABLE_SHARED=OFF -DALLOW_IN_SOURCE_BUILD=ON . &&\
+    make -j && cp src/appl/imginfo /d/p/fast/ && make clean &&\
+    USE_TRACK=1 make -j &&\
+    cp src/appl/imginfo /d/p/taint/ && make clean
