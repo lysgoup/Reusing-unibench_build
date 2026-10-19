@@ -25,8 +25,12 @@ RUN apt-get update && apt-get install -y unzip wget xz-utils flex bison tcl \
       nasm yasm zlib1g-dev autoconf automake libtool pkg-config daemontools \
       && apt-get clean
 
+# mp3gain's zip has no top-level directory, so it gets one before the bulk
+# unzip would spill its sources into /unibench itself.
 RUN git clone --depth=1 https://github.com/UNIFUZZ/unibench /unibench &&\
     cd /unibench &&\
+    mkdir mp3gain-1.5.2 && cd mp3gain-1.5.2 && mv ../mp3gain-1.5.2.zip ./ &&\
+    unzip -q mp3gain-1.5.2.zip && rm mp3gain-1.5.2.zip && cd .. &&\
     ls *.zip | xargs -i unzip -q '{}' &&\
     ls *.tar.gz | xargs -i tar xf '{}' &&\
     rm -rf .git/ *.tar.gz *.zip &&\
@@ -58,7 +62,7 @@ RUN cd /unibench/SQLite-3.8.9 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     cp sqlite3 /d/p/taint/ && make clean
 
 # --- tcpdump (+ libpcap) ---------------------------------------------------
-# Keeps -fno-builtin: 0.8% timeouts, 0.47 s per seed, the fastest of the four.
+# Keeps -fno-builtin: 0.8% timeouts, 0.47 s per seed, the fastest of cflow/sqlite3/tcpdump/ffmpeg.
 RUN cd /unibench/libpcap-1.8.1 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     ./configure --disable-shared && make -j &&\
     cd /unibench/tcpdump-4.8.1 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
@@ -105,3 +109,44 @@ RUN cd /unibench/lame-3.99.5 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./configure
     make -j && cp frontend/lame /d/p/fast/ && make clean &&\
     USE_TRACK=1 make -j &&\
     cp frontend/lame /d/p/taint/ && make clean
+
+# --- exiv2 -----------------------------------------------------------------
+# src/futils.cpp hand-declares the POSIX int-returning strerror_r whenever
+# CMake's standalone check (run without _GNU_SOURCE) reports it undeclared,
+# which clang rejects against <string.h>'s GNU char* declaration. The block is
+# unnecessary either way; same fix as aflplusplus-reusing-target.
+# Links zlib and expat: without abilist entries the track build calls their
+# dfs$-prefixed names, which the uninstrumented system libraries do not have.
+RUN for l in libz libexpat; do \
+      /reusing-scanner/tools/gen_library_abilist.sh /usr/lib/x86_64-linux-gnu/$l.so discard \
+        >> /tmp/abilist.txt; \
+    done &&\
+    cd /unibench/exiv2-0.26 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
+    sed -i '/#if defined EXV_HAVE_STRERROR_R && !defined EXV_HAVE_DECL_STRERROR_R/,/^#endif$/d' src/futils.cpp &&\
+    cmake -DEXIV2_ENABLE_SHARED=OFF . &&\
+    make exiv2 -j && cp bin/exiv2 /d/p/fast/ && make clean &&\
+    USE_TRACK=1 make exiv2 -j &&\
+    cp bin/exiv2 /d/p/taint/ && make clean
+
+# --- mp3gain ---------------------------------------------------------------
+# Keeps -fno-builtin, same finding as lame: ~46% of the server1 corpus times
+# out, the large files (timeout median 157 KB against 28 KB overall), and an
+# ANGORA_KEEP_BUILTINS=1 rebuild dropped the same share over ids 0-90 (40
+# against 38). The cost is the decoder under DFSan, not the flag.
+RUN cd /unibench/mp3gain-1.5.2 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
+    sed -i 's/CC=/CC?=/' Makefile &&\
+    make -j && cp mp3gain /d/p/fast/ && make clean &&\
+    USE_TRACK=1 make -j &&\
+    cp mp3gain /d/p/taint/ && make clean
+
+# --- mujs ------------------------------------------------------------------
+RUN cd /unibench/mujs-1.0.2 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
+    build=debug make -j && cp build/debug/mujs /d/p/fast/ && make clean &&\
+    USE_TRACK=1 build=debug make -j &&\
+    cp build/debug/mujs /d/p/taint/ && make clean
+
+# --- pdftotext (xpdf) ------------------------------------------------------
+RUN cd /unibench/xpdf-4.00 && export ANGORA_PASS_LOG_DIR=$(pwd) && cmake . &&\
+    make -j && cp xpdf/pdftotext /d/p/fast/ && make clean &&\
+    USE_TRACK=1 make -j &&\
+    cp xpdf/pdftotext /d/p/taint/ && make clean
