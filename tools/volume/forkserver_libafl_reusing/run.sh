@@ -82,6 +82,13 @@ echo "[forkserver_libafl_reusing] Output:  $OUTPUT_DIR"
 echo "[forkserver_libafl_reusing] Args:    ${TARGET_ARGS[*]}"
 echo "[forkserver_libafl_reusing] Taint:   $TAINT_DIR"
 
+# The reusing stage reports what it is doing (visits, execs, retired,
+# no_taint) at info level every couple of hundred entries; without this the
+# campaign leaves no trace that the stage ran beyond the pool-loaded banner.
+# Everything else stays at error so the multilog is not drowned in libafl's
+# own startup chatter.
+export RUST_LOG=error,reusing_core=info
+
 exec "$FUZZER" \
     -t 5000 \
     -o "$OUTPUT_DIR" \
