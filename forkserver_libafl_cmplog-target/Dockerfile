@@ -107,6 +107,42 @@ RUN cd $TARGET_DIR/mujs-1.0.2 && \
     (make clean || true) && \
     CC=afl-clang-fast AFL_LLVM_CMPLOG=1 build=debug make -j && \
     cp build/debug/mujs /root/projects/targets/cmplog/
+# libtiff-3.9.7 / tiffsplit
+RUN cd $TARGET_DIR/libtiff-3.9.7 && \
+    (make distclean || make clean || true) && \
+    CC=afl-clang-fast ./configure --disable-shared && \
+    AFL_LLVM_CMPLOG=1 make CC=afl-clang-fast -j && \
+    cp tools/tiffsplit /root/projects/targets/cmplog/
+
+# jhead-3.00
+# CC on the make command line, as the main build does: jhead's Makefile
+# assigns CC itself, and a makefile assignment beats the environment.
+RUN cd $TARGET_DIR/jhead-3.00 && \
+    (make clean || true) && \
+    AFL_LLVM_CMPLOG=1 make CC=afl-clang-fast -j && \
+    cp jhead /root/projects/targets/cmplog/
+
+# flvmeta-1.2.1
+# cmake caches the compiler, so the compiler has to be re-pointed here; the
+# main build left a CMakeCache naming $LIBAFL_CC.
+RUN cd $TARGET_DIR/flvmeta-1.2.1 && \
+    (make clean || true) && rm -f CMakeCache.txt && \
+    cmake -DCMAKE_C_COMPILER=afl-clang-fast . && \
+    AFL_LLVM_CMPLOG=1 make -j && \
+    cp src/flvmeta /root/projects/targets/cmplog/
+
+# jasper-2.0.12 / imginfo
+# Same warning suppressions as the main build: clang 17 errors on these
+# without them.
+RUN cd $TARGET_DIR/jasper-2.0.12 && \
+    (make clean || true) && rm -f CMakeCache.txt && \
+    cmake -DJAS_ENABLE_SHARED=OFF \
+    -DALLOW_IN_SOURCE_BUILD=ON \
+    -DCMAKE_C_COMPILER=afl-clang-fast \
+    -DCMAKE_C_FLAGS="-Wno-shift-negative-value -Wno-implicit-function-declaration" \
+    . && \
+    AFL_LLVM_CMPLOG=1 make -j && \
+    cp src/appl/imginfo /root/projects/targets/cmplog/
 
 # --- the fuzzer ---------------------------------------------------------------
 # COPYed from the build context, not cloned, for the same reasons as the base
