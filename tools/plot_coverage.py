@@ -266,6 +266,7 @@ DEFAULT_FUZZER_COLOR = 'green'  # forkserver_libafl / forkserver_storfuzz / anyt
 # variant dash.
 FUZZER_NAME_COLORS = {
     'aflplusplus-reusing': 'black',
+    'forkserver_libafl_reusing': 'black',
 }
 
 # The base name of each family gets a solid line; every other variant
