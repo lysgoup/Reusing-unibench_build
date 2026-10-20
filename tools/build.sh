@@ -199,12 +199,18 @@ elif [ "$FUZZER" = "forkserver_libafl_cmplog" ]; then
         exit 1
     fi
 
-    # Same split as forkserver_libafl_reusing above. The cmplog pipeline lives
-    # entirely in the crate's src/main.rs; the target binaries come from
-    # src/bin/libafl_cc.rs + src/lib.rs (main builds, via the reusing arm's
-    # base image) and from AFL++ at the commit pinned in the target Dockerfile
-    # (cmplog builds). So main.rs alone is the fuzzer-only group.
-    FUZZER_ONLY_RE='^fuzzers/cmplog_forkserver_cc/src/main\.rs$'
+    # Same split as forkserver_libafl_reusing above, but the whole crate src/
+    # is the fuzzer-only group here, not just main.rs: nothing this image
+    # builds for a TARGET comes out of it. The main binaries are inherited
+    # from the reusing arm's target image (built by that crate's libafl_cc),
+    # and the cmplog binaries come from AFL++'s afl-clang-fast at the commit
+    # pinned in the target Dockerfile -- neither Dockerfile so much as
+    # mentions this crate's libafl_cc. Verified by grep before widening.
+    #
+    # main.rs alone was too narrow: the v5.03a map layout landed as a second
+    # file (src/aflpp_cmplog.rs), which fell outside and forced a full AFL++
+    # and 12-target rebuild for a change that only ever reaches the fuzzer.
+    FUZZER_ONLY_RE='^fuzzers/cmplog_forkserver_cc/src/'
     # `|| true`: with the crate not yet committed, git ls-files matches
     # nothing and a bare grep's exit 1 would kill the script under -e.
     FUZZER_FILE_LIST=$(cd "$LIBAFL_REUSING_ROOT" && git ls-files | grep -E "$FUZZER_ONLY_RE" || true)
