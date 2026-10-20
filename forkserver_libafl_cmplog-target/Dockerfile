@@ -14,8 +14,8 @@
 #   * That second build per campaign target, into /root/projects/targets/cmplog/.
 #   * The cmplog_forkserver_cc fuzzer binary.
 #
-# Only the four targets of the current comparison get a cmplog build; add
-# more RUN blocks below, mirroring the pattern, when more are needed.
+# Only the targets of the current comparisons get a cmplog build; add more
+# RUN blocks below, mirroring the pattern, when more are needed.
 
 FROM unifuzz/unibench:forkserver_libafl_reusing-target
 
@@ -70,6 +70,43 @@ RUN cd $TARGET_DIR/lame-3.99.5 && \
     CC=afl-clang-fast ./configure --disable-shared && \
     AFL_LLVM_CMPLOG=1 make -j && \
     cp frontend/lame /root/projects/targets/cmplog/
+
+# exiv2-0.26 -- in-source cmake: the main build's CMakeCache.txt pins
+# libafl_cc as the compiler, so the cache goes before reconfiguring. The base
+# image's source edits (GCC_MINOR, strerror_r) are already in the tree.
+RUN cd $TARGET_DIR/exiv2-0.26 && \
+    (make clean || true) && rm -rf CMakeCache.txt CMakeFiles && \
+    cmake \
+      -DEXIV2_ENABLE_SHARED=OFF \
+      -DEXIV2_ENABLE_NLS=OFF \
+      -DCMAKE_C_COMPILER=afl-clang-fast \
+      -DCMAKE_CXX_COMPILER=afl-clang-fast++ \
+      -DCMAKE_C_FLAGS="-std=gnu99" \
+      . && \
+    AFL_LLVM_CMPLOG=1 make -j && \
+    cp bin/exiv2 /root/projects/targets/cmplog/
+
+# mp3gain-1.5.2 (the base image already made its Makefile take CC from outside)
+RUN cd $TARGET_DIR/mp3gain-1.5.2 && \
+    (make clean || true) && \
+    AFL_LLVM_CMPLOG=1 make CC=afl-clang-fast -j && \
+    cp mp3gain /root/projects/targets/cmplog/
+
+# xpdf-4.00 / pdftotext -- in-source cmake, same cache reset as exiv2
+RUN cd $TARGET_DIR/xpdf-4.00 && \
+    (make clean || true) && rm -rf CMakeCache.txt CMakeFiles && \
+    cmake -DCMAKE_CXX_FLAGS="-std=c++11" \
+          -DCMAKE_C_COMPILER=afl-clang-fast \
+          -DCMAKE_CXX_COMPILER=afl-clang-fast++ \
+          . && \
+    AFL_LLVM_CMPLOG=1 make -j && \
+    cp xpdf/pdftotext /root/projects/targets/cmplog/
+
+# mujs-1.0.2
+RUN cd $TARGET_DIR/mujs-1.0.2 && \
+    (make clean || true) && \
+    CC=afl-clang-fast AFL_LLVM_CMPLOG=1 build=debug make -j && \
+    cp build/debug/mujs /root/projects/targets/cmplog/
 
 # --- the fuzzer ---------------------------------------------------------------
 # COPYed from the build context, not cloned, for the same reasons as the base
