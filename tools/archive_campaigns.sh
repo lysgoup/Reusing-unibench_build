@@ -121,12 +121,12 @@ start_archiver() {
     echo_time "Archiver started for $key (PID: ${ARCHIVE_PIDS[$key]})"
 }
 
-# On archive_done, stop the matching fuzzer container (fixed-duration stop).
-# Signal defaults to SIGINT (angora/angora-reusing handle it gracefully -- dumps
-# constraints/results before exiting, per their "Fuzzing finished. Saving
-# results..." shutdown path). forkserver_libafl/forkserver_storfuzz get SIGKILL
-# instead: they're the fuzzers we've observed lingering past archive_done with
-# no graceful-shutdown benefit, so there's no reason to wait on SIGINT for them.
+# On archive_done, stop the matching fuzzer container (fixed-duration stop)
+# with SIGINT. Every arm handles it: angora/angora-reusing dump their results
+# first ("Fuzzing finished. Saving results..."), AFL++ installs its own
+# handler, and the LibAFL arms install LibAFL's shutdown handler at startup
+# (they inherit SIGINT ignored from entrypoint.sh's background launch, and
+# without that handler would never stop).
 maybe_stop_fuzzer() {
     local FUZZER=$1 TARGET=$2 CACHECID=$3
     local key="${FUZZER}::${TARGET}::${CACHECID}"
@@ -144,9 +144,6 @@ maybe_stop_fuzzer() {
         2>/dev/null | grep -F "$cache_path:/unibench_shared" | awk '{print $1}'; } || true)
 
     local sig=INT
-    case "$FUZZER" in
-        forkserver_libafl|forkserver_storfuzz) sig=KILL ;;
-    esac
 
     if [ -n "$fuzzer_container" ]; then
         echo_time "Sending SIG$sig to fuzzer container: ${fuzzer_container:0:12}"
