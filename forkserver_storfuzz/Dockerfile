@@ -60,6 +60,11 @@ RUN git clone https://github.com/rub-SoftSec/StorFuzz-LibAFL.git /StorFuzz && \
 COPY Reusing-unibench_build/forkserver_storfuzz/storfuzz.patch /
 RUN cd /StorFuzz && git apply /storfuzz.patch
 
+# Install LibAFL's shutdown handler, so SIGINT stops the fuzzer even though
+# entrypoint.sh starts it as a background job with SIGINT ignored
+COPY Reusing-unibench_build/forkserver_storfuzz/storfuzz_sigint.patch /
+RUN cd /StorFuzz && git apply /storfuzz_sigint.patch
+
 # unibench setup
 RUN git clone https://github.com/UNIFUZZ/unibench && \
     cd unibench && \

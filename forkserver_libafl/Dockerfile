@@ -72,6 +72,11 @@ RUN cd /root/StorFuzz-LibAFL && git apply /forkserver_toml_monitor.patch
 COPY Reusing-unibench_build/forkserver_libafl/forkserver_libafl_dryrun.patch /
 RUN cd /root/StorFuzz-LibAFL && git apply /forkserver_libafl_dryrun.patch
 
+# Patch 5: install LibAFL's shutdown handler, so SIGINT stops the fuzzer even
+# though entrypoint.sh starts it as a background job with SIGINT ignored
+COPY Reusing-unibench_build/forkserver_libafl/forkserver_libafl_sigint.patch /
+RUN cd /root/StorFuzz-LibAFL && git apply /forkserver_libafl_sigint.patch
+
 # Patch Cargo.toml: add track_hit_feedbacks, sancov_cmplog, mimalloc
 RUN cd /root/StorFuzz-LibAFL/fuzzers/forkserver_libafl_cc && \
     sed -i 's|libafl = { path = "../../libafl/" }|libafl = { path = "../../libafl/", features = ["track_hit_feedbacks"] }|' Cargo.toml && \
