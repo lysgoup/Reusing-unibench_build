@@ -211,3 +211,63 @@ RUN cd /unibench/jasper-2.0.12 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     make -j && cp src/appl/imginfo /d/p/fast/ && make clean &&\
     USE_TRACK=1 make -j &&\
     cp src/appl/imginfo /d/p/taint/ && make clean
+
+# The five below complete the campaign target list (tools/volume/targets.conf).
+# Recipes follow aflplusplus-reusing-target's, with each target built twice
+# as above.
+
+# --- wav2swf (swftools) ----------------------------------------------------
+# Same two inline fixes as aflplusplus-reusing-target. Only lib/ and the one
+# tool are built: a full `make` fails linking font2swf, as3compile, swfstrings
+# and swfrender with this toolchain, none of which a campaign runs.
+RUN cd /unibench/swftools-0.9.2 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./configure &&\
+    sed -i 's/int inline ActionTagSize/int ActionTagSize/' lib/modules/swfaction.c &&\
+    sed -i 's/byte inline PaethPredictor/byte PaethPredictor/' src/png2swf.c &&\
+    make -j -C lib && make -C src wav2swf && cp src/wav2swf /d/p/fast/ && make clean &&\
+    USE_TRACK=1 make -j -C lib && USE_TRACK=1 make -C src wav2swf &&\
+    cp src/wav2swf /d/p/taint/ && make clean
+
+# --- infotocap (ncurses tic) -----------------------------------------------
+# --without-cxx: the C++ binding demo is not needed, as in the other arms.
+# Copied under the name targets.conf uses.
+RUN cd /unibench/ncurses-6.1 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
+    ./configure --disable-shared --without-cxx &&\
+    make -j && cp progs/tic /d/p/fast/infotocap && make clean &&\
+    USE_TRACK=1 make -j &&\
+    cp progs/tic /d/p/taint/infotocap && make clean
+
+# --- mp42aac (Bento4, cmake) -----------------------------------------------
+RUN cd /unibench/Bento4-1.5.1-628 && export ANGORA_PASS_LOG_DIR=$(pwd) && cmake . &&\
+    make -j mp42aac && cp mp42aac /d/p/fast/ && make clean &&\
+    USE_TRACK=1 make -j mp42aac &&\
+    cp mp42aac /d/p/taint/ && make clean
+
+# --- nm (binutils-5279478) -------------------------------------------------
+# Upstream directory name, for the same reason as tiffsplit's block. The
+# nested configure is aflplusplus-reusing-target's. The track pass builds in
+# a second copy of the tree so it starts from pristine sources rather than
+# relying on distclean across the nested configure directories. Links the
+# bundled zlib (-L.../zlib), which is instrumented along with the rest, so no
+# abilist entry is needed.
+RUN build_nm() { \
+      MAKEINFO=true ./configure --disable-shared --disable-werror \
+        --disable-gdb --disable-gdbserver --disable-gold &&\
+      for i in bfd libiberty opcodes libctf; do \
+        (cd $i && MAKEINFO=true ./configure --disable-shared --disable-werror && make -j) || return 1; \
+      done &&\
+      cd binutils && MAKEINFO=true ./configure --disable-shared --disable-werror &&\
+      make nm-new; \
+    } &&\
+    cp -a /unibench/binutils_5279478 /tmp/nm_track &&\
+    cd /unibench/binutils_5279478 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
+    build_nm && cp nm-new /d/p/fast/nm &&\
+    cd /tmp/nm_track && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
+    export USE_TRACK=1 && build_nm && cp nm-new /d/p/taint/nm &&\
+    rm -rf /tmp/nm_track
+
+# --- objdump (binutils-2.28) -----------------------------------------------
+RUN cd /unibench/binutils-2.28 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
+    ./configure --disable-shared LEXLIB= &&\
+    make -j LEXLIB= && cp binutils/objdump /d/p/fast/ && make clean &&\
+    USE_TRACK=1 make -j LEXLIB= &&\
+    cp binutils/objdump /d/p/taint/ && make clean
