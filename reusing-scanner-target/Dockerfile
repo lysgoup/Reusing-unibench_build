@@ -140,9 +140,12 @@ RUN cd /unibench/mp3gain-1.5.2 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     cp mp3gain /d/p/taint/ && make clean
 
 # --- mujs ------------------------------------------------------------------
+# build/debug up front: the Makefile's mujs.pc rule doesn't depend on the
+# mkdir rule, so under -j it can write into a directory that isn't there yet.
+# Again after make clean, which removes build/.
 RUN cd /unibench/mujs-1.0.2 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
-    build=debug make -j && cp build/debug/mujs /d/p/fast/ && make clean &&\
-    USE_TRACK=1 build=debug make -j &&\
+    mkdir -p build/debug && build=debug make -j && cp build/debug/mujs /d/p/fast/ && make clean &&\
+    mkdir -p build/debug && USE_TRACK=1 build=debug make -j &&\
     cp build/debug/mujs /d/p/taint/ && make clean
 
 # --- pdftotext (xpdf) ------------------------------------------------------
