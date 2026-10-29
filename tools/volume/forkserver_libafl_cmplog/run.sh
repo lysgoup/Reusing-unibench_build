@@ -38,12 +38,16 @@ case "$TARGET" in
     objdump)   TARGET_BINARY="/root/projects/targets/objdump" ;;
     tcpdump)   TARGET_BINARY="/root/projects/targets/tcpdump" ;;
     ffmpeg)    TARGET_BINARY="/root/projects/targets/ffmpeg" ;;
+    wav2swf)   TARGET_BINARY="/root/projects/targets/wav2swf" ;;
+    gdk_pixbuf_pixdata) TARGET_BINARY="/root/projects/targets/gdk-pixbuf-pixdata" ;;
     *)         echo "forkserver_libafl_cmplog: Unknown target: $TARGET"; exit 1 ;;
 esac
 
 CMPLOG_BINARY="/root/projects/targets/cmplog/${TARGET##*/}"
-# infotocap's main binary is tic; keep the cmplog name in step with the case above
+# infotocap's main binary is tic, gdk_pixbuf_pixdata's gdk-pixbuf-pixdata;
+# keep the cmplog names in step with the case above
 [ "$TARGET" = "infotocap" ] && CMPLOG_BINARY="/root/projects/targets/cmplog/tic"
+[ "$TARGET" = "gdk_pixbuf_pixdata" ] && CMPLOG_BINARY="/root/projects/targets/cmplog/gdk-pixbuf-pixdata"
 
 # Prefer $SEED if it's a non-empty directory (e.g., /customized_seed from captainrc),
 # otherwise fall back to image-internal seeds

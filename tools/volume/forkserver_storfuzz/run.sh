@@ -32,6 +32,8 @@ case "$TARGET" in
     objdump)   TARGET_BINARY="/root/projects/targets/objdump" ;;
     tcpdump)   TARGET_BINARY="/root/projects/targets/tcpdump" ;;
     ffmpeg)    TARGET_BINARY="/root/projects/targets/ffmpeg" ;;
+    wav2swf)   TARGET_BINARY="/root/projects/targets/wav2swf" ;;
+    gdk_pixbuf_pixdata) TARGET_BINARY="/root/projects/targets/gdk-pixbuf-pixdata" ;;
     *)         echo "forkserver_storfuzz: Unknown target: $TARGET"; exit 1 ;;
 esac
 

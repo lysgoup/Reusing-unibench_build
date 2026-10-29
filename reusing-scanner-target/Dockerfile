@@ -274,3 +274,23 @@ RUN cd /unibench/binutils-2.28 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     make -j LEXLIB= && cp binutils/objdump /d/p/fast/ && make clean &&\
     USE_TRACK=1 make -j LEXLIB= &&\
     cp binutils/objdump /d/p/taint/ && make clean
+
+# --- gdk_pixbuf_pixdata (gdk-pixbuf) ---------------------------------------
+# The configure flags of aflplusplus-reusing-target, and the image libraries
+# the LibAFL arms' base image has. autogen.sh needs autopoint and gtk-doc;
+# gettext's msgfmt builds po/, which a plain `make` reaches. glib and the
+# three image libraries stay uninstrumented, so the track build discards
+# them, as Angora's recipe for this target did. Copied under the name
+# targets.conf uses.
+RUN apt-get update && apt-get install -y autopoint gettext gtk-doc-tools libglib2.0-dev \
+      libpng-dev libjpeg-dev libtiff5-dev && apt-get clean &&\
+    for l in libglib-2.0 libgobject-2.0 libgio-2.0 libgmodule-2.0 \
+             libpng16 libjpeg libtiff; do \
+      /reusing-scanner/tools/gen_library_abilist.sh /usr/lib/x86_64-linux-gnu/$l.so discard \
+        >> /tmp/abilist.txt; \
+    done &&\
+    cd /unibench/gdk-pixbuf-2.31.1 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
+    ./autogen.sh --enable-static=yes --enable-shared=no --with-included-loaders=yes &&\
+    make -j && cp gdk-pixbuf/gdk-pixbuf-pixdata /d/p/fast/gdk_pixbuf_pixdata && make clean &&\
+    USE_TRACK=1 make -j &&\
+    cp gdk-pixbuf/gdk-pixbuf-pixdata /d/p/taint/gdk_pixbuf_pixdata && make clean

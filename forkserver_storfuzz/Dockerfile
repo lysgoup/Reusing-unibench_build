@@ -158,10 +158,15 @@ RUN apt-get install -y tcl-dev && \
     make CC=$LIBAFL_CC -j && \
     cp sqlite3 /root/projects/targets/
 
-# gdk-pixbuf-2.31.1: skipped -- its autogen.sh/autoreconf chain needs a
-# working autopoint (gettext) that this base image doesn't have; AUTOPOINT=true
-# and manually fetching config.rpath weren't enough to get past it. Revisit
-# separately if this target is needed.
+# gdk-pixbuf-2.31.1 / gdk-pixbuf-pixdata
+# autogen.sh runs autopoint, which the base image doesn't have. Configure
+# flags as in aflplusplus-reusing-target.
+RUN apt-get install -y autopoint && \
+    cd $TARGET_DIR/gdk-pixbuf-2.31.1 && \
+    CC=$LIBAFL_CC CXX=$LIBAFL_CXX ./autogen.sh \
+      --enable-static=yes --enable-shared=no --with-included-loaders=yes && \
+    make -j && \
+    cp gdk-pixbuf/gdk-pixbuf-pixdata /root/projects/targets/
 
 # jhead-3.00
 RUN cd $TARGET_DIR/jhead-3.00 && \
@@ -174,11 +179,18 @@ RUN cd $TARGET_DIR/lame-3.99.5 && \
     make -j && \
     cp frontend/lame /root/projects/targets/
 
-# swftools-0.9.2 / wav2swf: skipped -- needs a real source patch (not just
-# a warning-suppression flag) in its bundled xpdf copy (lib/pdf/xpdf/
-# GlobalParams.cc:925,927, pointer/int comparison), which would need the
-# identical patch on the angora side too for a fair comparison. Revisit
-# separately if this target is needed.
+# swftools-0.9.2 / wav2swf
+# Only the two libraries wav2swf links: the bundled xpdf in lib/pdf doesn't
+# compile with clang 17 (GlobalParams.cc:925,927, pointer/int comparison),
+# and wav2swf never touches it. The two inline fixes are the ones
+# aflplusplus-reusing-target and reusing-scanner-target use.
+RUN cd $TARGET_DIR/swftools-0.9.2 && \
+    CC=$LIBAFL_CC CXX=$LIBAFL_CXX CFLAGS="-fcommon" CXXFLAGS="-fcommon" ./configure && \
+    sed -i 's/int inline ActionTagSize/int ActionTagSize/' lib/modules/swfaction.c && \
+    sed -i 's/byte inline PaethPredictor/byte PaethPredictor/' src/png2swf.c && \
+    make -j -C lib librfxswf.a libbase.a && \
+    make -C src wav2swf && \
+    cp src/wav2swf /root/projects/targets/
 
 # ncurses-6.1 / tic
 RUN cd $TARGET_DIR/ncurses-6.1 && \

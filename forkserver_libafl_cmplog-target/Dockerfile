@@ -144,6 +144,82 @@ RUN cd $TARGET_DIR/jasper-2.0.12 && \
     AFL_LLVM_CMPLOG=1 make -j && \
     cp src/appl/imginfo /root/projects/targets/cmplog/
 
+# swftools-0.9.2 / wav2swf -- configure caches the compiler, so it reruns;
+# the base image already applied the two inline fixes. Only the two
+# libraries wav2swf links, as in the main build.
+RUN cd $TARGET_DIR/swftools-0.9.2 && \
+    (make clean || true) && \
+    CC=afl-clang-fast CXX=afl-clang-fast++ CFLAGS="-fcommon" CXXFLAGS="-fcommon" ./configure && \
+    AFL_LLVM_CMPLOG=1 make -j -C lib librfxswf.a libbase.a && \
+    AFL_LLVM_CMPLOG=1 make -C src wav2swf && \
+    cp src/wav2swf /root/projects/targets/cmplog/
+
+# ncurses-6.1 / tic (infotocap), named tic as the main build is
+RUN cd $TARGET_DIR/ncurses-6.1 && \
+    (make distclean || make clean || true) && \
+    CC=afl-clang-fast ./configure --disable-shared --without-cxx && \
+    AFL_LLVM_CMPLOG=1 make -j && \
+    cp progs/tic /root/projects/targets/cmplog/
+
+# Bento4-1.5.1-628 / mp42aac -- in-source cmake, same cache reset as flvmeta.
+# Only the one tool: the main build's `make -j` builds every Bento4 app.
+RUN cd $TARGET_DIR/Bento4-1.5.1-628 && \
+    (make clean || true) && rm -f CMakeCache.txt && \
+    cmake -DCMAKE_C_COMPILER=afl-clang-fast -DCMAKE_CXX_COMPILER=afl-clang-fast++ . && \
+    AFL_LLVM_CMPLOG=1 make -j mp42aac && \
+    cp mp42aac /root/projects/targets/cmplog/
+
+# binutils-5279478 / nm -- the main build configured each library and
+# binutils/ on its own, so each gets its own distclean before the same steps.
+RUN cd $TARGET_DIR/binutils-5279478 && \
+    for i in bfd libiberty opcodes libctf binutils; do \
+        (cd $i && (make distclean || true)); \
+    done && \
+    (make distclean || true) && \
+    MAKEINFO=true CC=afl-clang-fast ./configure \
+      --disable-shared --disable-werror --disable-gdb --disable-gdbserver --disable-gold && \
+    for i in bfd libiberty opcodes libctf; do \
+        cd $i && MAKEINFO=true CC=afl-clang-fast ./configure --disable-shared --disable-werror && \
+        AFL_LLVM_CMPLOG=1 make -j && cd ..; \
+    done && \
+    cd binutils && MAKEINFO=true CC=afl-clang-fast ./configure --disable-shared --disable-werror && \
+    AFL_LLVM_CMPLOG=1 make nm-new && \
+    cp nm-new /root/projects/targets/cmplog/nm
+
+# binutils-2.28 / objdump
+RUN cd $TARGET_DIR/binutils-2.28 && \
+    (make distclean || true) && \
+    CC=afl-clang-fast ./configure --disable-shared LEXLIB= && \
+    AFL_LLVM_CMPLOG=1 make -j LEXLIB= && \
+    cp binutils/objdump /root/projects/targets/cmplog/objdump
+
+# libpcap-1.8.1 + tcpdump-4.8.1 / tcpdump -- libpcap is linked in statically,
+# so it gets the cmplog build too. Same CFLAGS as the main build.
+RUN cd $TARGET_DIR/libpcap-1.8.1 && \
+    (make distclean || true) && \
+    CC=afl-clang-fast ./configure --disable-shared && \
+    AFL_LLVM_CMPLOG=1 make -j && \
+    cd $TARGET_DIR/tcpdump-4.8.1 && \
+    (make distclean || true) && \
+    CC=afl-clang-fast CFLAGS="-Wno-error=implicit-int -Wno-error=implicit-function-declaration" ./configure && \
+    AFL_LLVM_CMPLOG=1 make -j && \
+    cp tcpdump /root/projects/targets/cmplog/
+
+# ffmpeg-4.0.1, named ffmpeg as the main build is
+RUN cd $TARGET_DIR/ffmpeg-4.0.1 && \
+    (make distclean || true) && \
+    ./configure --disable-doc --disable-shared --cc=afl-clang-fast --cxx=afl-clang-fast++ && \
+    AFL_LLVM_CMPLOG=1 make -j$(nproc) && \
+    cp ffmpeg_g /root/projects/targets/cmplog/ffmpeg
+
+# gdk-pixbuf-2.31.1 / gdk-pixbuf-pixdata -- the base image installed autopoint
+RUN cd $TARGET_DIR/gdk-pixbuf-2.31.1 && \
+    (make distclean || true) && \
+    CC=afl-clang-fast CXX=afl-clang-fast++ ./autogen.sh \
+      --enable-static=yes --enable-shared=no --with-included-loaders=yes && \
+    AFL_LLVM_CMPLOG=1 make -j && \
+    cp gdk-pixbuf/gdk-pixbuf-pixdata /root/projects/targets/cmplog/
+
 # --- the fuzzer ---------------------------------------------------------------
 # COPYed from the build context, not cloned, for the same reasons as the base
 # image: local commits are testable, and docker cannot serve a stale clone.
