@@ -65,7 +65,9 @@ RUN cd /unibench/jq-1.5 && ./configure --disable-shared &&\
     make -j &&\
     cp jq /d/p/cov/
 
-RUN cd /unibench/mujs-1.0.2 &&\
+# build/debug up front: the Makefile's mujs.pc rule doesn't depend on the
+# mkdir rule, so under -j it can write into a directory that isn't there yet.
+RUN cd /unibench/mujs-1.0.2 && mkdir -p build/debug &&\
     build=debug make -j &&\
     cp build/debug/mujs /d/p/cov/
 
