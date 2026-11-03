@@ -267,6 +267,12 @@ DEFAULT_FUZZER_COLOR = 'green'  # forkserver_libafl / forkserver_storfuzz / anyt
 FUZZER_NAME_COLORS = {
     'aflplusplus-reusing': 'black',
     'forkserver_libafl_reusing': 'black',
+    # forkserver_libafl_reusing's ablation arms, drawn next to it once their
+    # workdirs are linked into one coverage/ under these names. Their own
+    # colours: as reusing variants they would all share one green dash.
+    'ablation-randpos': 'tab:orange',
+    'ablation-randval': 'tab:purple',
+    'ablation-autodict': 'tab:cyan',
 }
 
 # The base name of each family gets a solid line; every other variant
