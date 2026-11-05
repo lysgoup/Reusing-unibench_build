@@ -19,7 +19,7 @@
 #                           -t and -f combine (AND); all trials of the selected
 #                           fuzzer(s)/target(s) are measured.
 #     -r COV_RUNS (opt):    how many times each input is replayed per snapshot to union
-#                           non-deterministic coverage (default 8; e.g. 1 = once, 10 = 10x)
+#                           non-deterministic coverage (default 1; e.g. 1 = once, 10 = 10x)
 #     -p PARALLEL (opt):    max concurrent coverage containers (default: nproc, or the
 #                           number of CPUs in -c when that is given)
 #     -c CPULIST  (opt):    pin measurement containers to CPUs via docker --cpuset-cpus.
