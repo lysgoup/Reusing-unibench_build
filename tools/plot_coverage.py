@@ -342,6 +342,24 @@ def set_ylim_with_margin(ax, all_values):
     ax.set_ylim(min_val - bottom_margin, max_val + top_margin)
 
 
+def split_data_name(name, data_dir):
+    """Split a data file's '{target}_{fuzzer}' into (target, fuzzer), or None.
+
+    Both halves can contain '_' (gdk_pixbuf_pixdata, forkserver_libafl), so
+    the first '_' is no boundary. The fuzzer is the longest name among
+    WORKDIR/coverage/'s directories that ends the name; data_dir is
+    WORKDIR/graph/data.
+    """
+    coverage_dir = Path(data_dir).parent.parent / 'coverage'
+    fuzzers = sorted((p.name for p in coverage_dir.iterdir() if p.is_dir()),
+                     key=len, reverse=True) if coverage_dir.is_dir() else []
+    for fuzzer in fuzzers:
+        if name.endswith('_' + fuzzer) and len(name) > len(fuzzer) + 1:
+            return name[:-len(fuzzer) - 1], fuzzer
+    parts = name.split('_', 1)
+    return tuple(parts) if len(parts) == 2 else None
+
+
 def plot_branch_graphs(graph_dir, data_dir, interval, log_x=False, use_median=False, only_average=False):
     """
     Generate branch hit count graphs from data files.
@@ -379,14 +397,13 @@ def plot_branch_graphs(graph_dir, data_dir, interval, log_x=False, use_median=Fa
         # Extract target and fuzzer from filename
         # Format: {target}_{fuzzer}_branch_count.txt
         filename = data_file.stem.replace('_branch_count', '')
-        parts = filename.split('_', 1)
+        parts = split_data_name(filename, data_dir)
 
-        if len(parts) != 2:
+        if parts is None:
             print(f"Warning: Could not parse filename: {data_file.name}")
             continue
 
-        target_name = parts[0]
-        fuzzer_name = parts[1]
+        target_name, fuzzer_name = parts
 
         # Read data file
         try:
@@ -517,13 +534,12 @@ def plot_comparison_graphs(graph_dir, data_dir, interval, log_x=False, use_media
         # Extract target and fuzzer from filename
         # Format: {target}_{fuzzer}_branch_count.txt
         filename = data_file.stem.replace('_branch_count', '')
-        parts = filename.split('_', 1)
+        parts = split_data_name(filename, data_dir)
 
-        if len(parts) != 2:
+        if parts is None:
             continue
 
-        target_name = parts[0]
-        fuzzer_name = parts[1]
+        target_name, fuzzer_name = parts
 
         # Read data file
         try:
@@ -687,11 +703,11 @@ def plot_per_trial_comparison_graphs(graph_dir, data_dir, interval, log_x=False)
 
     for data_file in data_files:
         filename = data_file.stem.replace('_branch_count', '')
-        parts = filename.split('_', 1)
-        if len(parts) != 2:
+        parts = split_data_name(filename, data_dir)
+        if parts is None:
             continue
 
-        target_name, fuzzer_name = parts[0], parts[1]
+        target_name, fuzzer_name = parts
 
         try:
             with open(data_file, 'r') as f:
