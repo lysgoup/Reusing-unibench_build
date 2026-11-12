@@ -273,6 +273,9 @@ FUZZER_NAME_COLORS = {
     'ablation-randpos': 'tab:orange',
     'ablation-randval': 'tab:purple',
     'ablation-autodict': 'tab:cyan',
+    # StorFuzz with its FuzzBench fuzzing loop; forkserver_storfuzz keeps
+    # the green dotted line.
+    'forkserver_storfuzz_fbconfig': 'tab:brown',
 }
 
 # The base name of each family gets a solid line; every other variant

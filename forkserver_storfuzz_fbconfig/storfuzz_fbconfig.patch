@@ -1,0 +1,233 @@
+StorFuzz's FuzzBench fuzzer, in-process -> forkserver, and nothing else.
+
+Applies to fuzzers/storfuzz_fuzzbench_in_process/src/bin/storfuzz_fbconfig.rs,
+a verbatim copy of that crate's src/lib.rs after FuzzBench's own
+storfuzz_dryrun.patch (see the Dockerfile). The diff below is therefore the
+complete difference from the StorFuzz FuzzBench experiments ran:
+
+  - executor   InProcessExecutor + LLVMFuzzerTestOneInput harness
+               -> ForkserverExecutor over the trailing `-- target args`
+               (SIGKILL on timeout, as the other unibench forkserver arms;
+               child output shown only with LIBAFL_FUZZBENCH_DEBUG, as the
+               in-process fuzzer silences it)
+  - observers  in-process edges / StorFuzz data maps -> the same two maps in
+               shared memory, handed over in __AFL_SHM_ID / __STORFUZZ_SHM_ID
+  - tokens     autotokens() from the fuzzer's own binary -> the tokens the
+               forkserver target sends
+  - dropped    LLVMFuzzerInitialize, and the libFuzzer mode that runs the
+               files given as arguments; `remaining` is the target instead
+  - main()     the binary's entry point calls libafl_main()
+  - BytesInput named on the corpus, where the harness used to infer it
+
+--- a/fuzzers/storfuzz_fuzzbench_in_process/src/bin/storfuzz_fbconfig.rs
++++ b/fuzzers/storfuzz_fuzzbench_in_process/src/bin/storfuzz_fbconfig.rs
+@@ -22,17 +22,17 @@
+ use libafl::{
+     corpus::{Corpus, InMemoryOnDiskCorpus, OnDiskCorpus},
+     events::SimpleRestartingEventManager,
+-    executors::{inprocess::InProcessExecutor, ExitKind},
++    executors::forkserver::ForkserverExecutor,
+     feedback_or, feedback_and_fast, feedback_not,
+     feedbacks::{CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback, ConstFeedback},
+     fuzzer::{Fuzzer, StdFuzzer},
+-    inputs::{BytesInput, HasTargetBytes},
++    inputs::BytesInput,
+     monitors::{SimpleMonitor, OnDiskTOMLMonitor},
+     mutators::{
+         scheduled::havoc_mutations, tokens_mutations,
+         StdMOptMutator, Tokens,
+     },
+-    observers::{HitcountsMapObserver, TimeObserver},
++    observers::{HitcountsMapObserver, StdMapObserver, TimeObserver},
+     schedulers::{
+         powersched::PowerSchedule, IndexesLenTimeMinimizerScheduler, StdWeightedScheduler,
+     },
+@@ -44,12 +44,8 @@
+ };
+ use libafl::feedbacks::AflMapFeedback;
+ use libafl::common::HasMetadata;
+-use libafl_bolts::{current_nanos, current_time, os::dup, os::dup2, rands::StdRand, shmem::{ShMemProvider, StdShMemProvider}, tuples::{tuple_list, Merge}, AsSlice};
+-#[cfg(any(target_os = "linux", target_vendor = "apple"))]
+-use libafl_targets::autotokens;
+-use libafl_targets::{
+-    libfuzzer_initialize, libfuzzer_test_one_input, std_edges_map_observer, std_storfuzz_map_observer,
+-};
++use libafl_bolts::{current_nanos, current_time, os::dup, os::dup2, rands::StdRand, shmem::{ShMem, ShMemProvider, StdShMemProvider}, tuples::{tuple_list, Merge}, AsSliceMut};
++use libafl_targets::{EDGES_MAP_SIZE_IN_USE, STORFUZZ_MAP_SIZE};
+ 
+ use storfuzz_constants::DEFAULT_ASAN_OPTIONS;
+ use libafl::observers::CanTrack;
+@@ -82,7 +78,7 @@
+     tokenfile: Option<PathBuf>,
+     #[arg(value_name = "SECONDS",long, short='l', default_value_t = 1, help = "Time in seconds between log entries, 0 signals no wait time")]
+     secs_between_log_msgs: u64,
+-    #[arg()]
++    #[arg(help = "The forkserver target and its arguments, after --")]
+     remaining: Option<Vec<String>>
+ }
+ 
+@@ -133,15 +129,9 @@
+         env::current_dir().unwrap().to_string_lossy().to_string()
+     );
+ 
+-    if let Some(filenames) = args.remaining {
+-        let filenames: Vec<&str> = filenames.iter().map(String::as_str).collect();
+-        if !filenames.is_empty() {
+-            run_testcases(&filenames);
+-            return;
+-        }
+-    }
++    let target = args.remaining.unwrap_or_default();
+ 
+-    if args.output_dir.is_none() || args.input_dir.is_none() {
++    if args.output_dir.is_none() || args.input_dir.is_none() || target.is_empty() {
+         let mut cmd =  Arguments::command();
+         cmd.print_help().expect("Failed printing help. Something must be seriously wrong!");
+         return;
+@@ -190,39 +180,17 @@
+ 
+     let secs_between_log_msgs = Duration::from_secs(args.secs_between_log_msgs);
+ 
+-    fuzz(out_dir, crashes, &in_dir, args.tokenfile, log, secs_between_log_msgs, stats_file, timeout, args.timeouts_are_solutions, args.disregard_data, args.disregard_edges, args.fast_disregard, args.store_queue_metadata)
++    fuzz(out_dir, crashes, &in_dir, target, args.tokenfile, log, secs_between_log_msgs, stats_file, timeout, args.timeouts_are_solutions, args.disregard_data, args.disregard_edges, args.fast_disregard, args.store_queue_metadata)
+         .expect("An error occurred while fuzzing");
+ }
+ 
+-fn run_testcases(filenames: &[&str]) {
+-    // The actual target run starts here.
+-    // Call LLVMFUzzerInitialize() if present.
+-    let args: Vec<String> = env::args().collect();
+-    if libfuzzer_initialize(&args) == -1 {
+-        println!("Warning: LLVMFuzzerInitialize failed with -1");
+-    }
+-
+-    println!(
+-        "You are not fuzzing, just executing {} testcases",
+-        filenames.len()
+-    );
+-    for fname in filenames {
+-        println!("Executing {fname}");
+-
+-        let mut file = File::open(fname).expect("No file found");
+-        let mut buffer = vec![];
+-        file.read_to_end(&mut buffer).expect("Buffer overflow");
+-
+-        libfuzzer_test_one_input(&buffer);
+-    }
+-}
+-
+ /// The actual fuzzer
+ #[allow(clippy::too_many_lines)]
+ fn fuzz(
+     corpus_dir: PathBuf,
+     objective_dir: PathBuf,
+     seed_dir: &PathBuf,
++    target: Vec<String>,
+     tokenfile: Option<PathBuf>,
+     logfile: Option<PathBuf>,
+     secs_between_log_msgs: Duration,
+@@ -284,8 +252,14 @@
+ 
+     // Create an observation channel using the coverage map
+     // We don't use the hitcounts (see the Cargo.toml, we use pcguard_edges)
+-    let edges_observer = HitcountsMapObserver::new(unsafe { std_edges_map_observer("edges") }).track_indices();
+-    let data_observer = unsafe {std_storfuzz_map_observer("data")}.track_indices();
++    // Edge and StorFuzz data maps live in shared memory the forkserver target
++    // maps through __AFL_SHM_ID and __STORFUZZ_SHM_ID
++    let mut edges_shmem = shmem_provider.new_shmem(EDGES_MAP_SIZE_IN_USE)?;
++    edges_shmem.write_to_env("__AFL_SHM_ID")?;
++    let mut data_shmem = shmem_provider.new_shmem(STORFUZZ_MAP_SIZE)?;
++    data_shmem.write_to_env("__STORFUZZ_SHM_ID")?;
++    let edges_observer = HitcountsMapObserver::new(unsafe { StdMapObserver::new("edges", edges_shmem.as_slice_mut()) }).track_indices();
++    let data_observer = unsafe {StdMapObserver::new("data", data_shmem.as_slice_mut())}.track_indices();
+ 
+     // Create an observation channel to keep track of the execution time
+     let time_observer = TimeObserver::new("time");
+@@ -332,9 +306,9 @@
+             StdRand::with_seed(current_nanos()),
+             // Corpus that will be evolved, we keep it in memory for performance
+             if store_queue_metadata{
+-                InMemoryOnDiskCorpus::new(&corpus_dir).unwrap()
++                InMemoryOnDiskCorpus::<BytesInput>::new(&corpus_dir).unwrap()
+             } else {
+-                InMemoryOnDiskCorpus::no_meta(&corpus_dir).unwrap()
++                InMemoryOnDiskCorpus::<BytesInput>::no_meta(&corpus_dir).unwrap()
+             },
+             // Corpus in which we store solutions (crashes in this example),
+             // on disk so the user can get them after stopping the fuzzer
+@@ -350,13 +324,6 @@
+ 
+     println!("Let's fuzz :)");
+ 
+-    // The actual target run starts here.
+-    // Call LLVMFUzzerInitialize() if present.
+-    let args: Vec<String> = env::args().collect();
+-    if libfuzzer_initialize(&args) == -1 {
+-        println!("Warning: LLVMFuzzerInitialize failed with -1");
+-    }
+-
+     // Setup a MOPT mutator
+     let mutator = StdMOptMutator::new(
+         &mut state,
+@@ -381,29 +348,24 @@
+     // A fuzzer with feedbacks and a corpus scheduler
+     let mut fuzzer = StdFuzzer::new(scheduler, feedback, objective);
+ 
+-    // The wrapped harness function, calling out to the LLVM-style harness
+-    let mut harness = |input: &BytesInput| {
+-        let target = input.target_bytes();
+-        let buf = target.as_slice();
+-        libfuzzer_test_one_input(buf);
+-        ExitKind::Ok
+-    };
+-
+-
+-    // Create the executor for an in-process function with one observer for edge coverage and one for the execution time
++    // Create the executor for a forkserver target with one observer for edge coverage and one for the execution time
++    // (SIGKILL on timeout, as the other unibench forkserver arms)
++    let mut autotokens = Tokens::default();
+     let mut executor =
+-        InProcessExecutor::with_timeout(
+-            &mut harness,
+-            tuple_list!(
++        ForkserverExecutor::builder()
++            .program(target[0].clone())
++            .parse_afl_cmdline(&target[1..])
++            .debug_child(var("LIBAFL_FUZZBENCH_DEBUG").is_ok())
++            .shmem_provider(&mut shmem_provider)
++            .autotokens(&mut autotokens)
++            .coverage_map_size(EDGES_MAP_SIZE_IN_USE)
++            .timeout(timeout)
++            .kill_signal("SIGKILL".parse().unwrap())
++            .build(tuple_list!(
+                 edges_observer,
+                 data_observer,
+                 time_observer,
+-            ),
+-            &mut fuzzer,
+-            &mut state,
+-            &mut mgr,
+-            timeout
+-        )?;
++            ))?;
+ 
+     // The order of the stages matters!
+     let mut stages = tuple_list!(calibration_stage, power);
+@@ -416,7 +378,7 @@
+         }
+         #[cfg(any(target_os = "linux", target_vendor = "apple"))]
+         {
+-            toks += autotokens()?;
++            toks += autotokens;
+         }
+ 
+         if !toks.is_empty() {
+@@ -455,3 +417,8 @@
+     // Never reached
+     Ok(())
+ }
++
++/// The fuzzer binary's entry point
++fn main() {
++    libafl_main();
++}
