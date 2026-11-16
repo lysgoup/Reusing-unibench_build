@@ -7,6 +7,12 @@
 # never runs them. Each target is built twice: plain (the "fast" binary the
 # forkserver needs) and USE_TRACK=1 (the DFSan binary a scan actually reads).
 #
+# Each track binary gets the pass's cmpid -> source map of its build beside
+# it, as <name>.cmpid.map: the cmpid_track.map in the directory
+# ANGORA_PASS_LOG_DIR names when its track build runs (tcpdump's holds
+# libpcap's too: the variable already points at tcpdump when libpcap's track
+# build runs); taint_scan turns it into the scan's cmpid_map.tsv.
+#
 # ANGORA_KEEP_BUILTINS=1 on a track build opts that target out of
 # angora-clang's -fno-builtin. Measured reasons, per target, at its block.
 
@@ -49,7 +55,7 @@ ENV ANGORA_TAINT_RULE_LIST=/tmp/abilist.txt
 RUN cd /unibench/cflow-1.6 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./configure &&\
     make -j && cp src/cflow /d/p/fast/ && make clean &&\
     ANGORA_KEEP_BUILTINS=1 USE_TRACK=1 make -j &&\
-    cp src/cflow /d/p/taint/ && make clean
+    cp src/cflow /d/p/taint/ && cat "$ANGORA_PASS_LOG_DIR"/cmpid_track.map > /d/p/taint/cflow.cmpid.map && make clean
 
 # --- sqlite3 ---------------------------------------------------------------
 # Opts out too. It runs the SQL it is handed, so the VDBE loop is traced as
@@ -59,7 +65,7 @@ RUN cd /unibench/SQLite-3.8.9 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     ./configure --disable-shared &&\
     make -j && cp sqlite3 /d/p/fast/ && make clean &&\
     ANGORA_KEEP_BUILTINS=1 USE_TRACK=1 ASAN_OPTIONS="detect_leaks=0" make -j &&\
-    cp sqlite3 /d/p/taint/ && make clean
+    cp sqlite3 /d/p/taint/ && cat "$ANGORA_PASS_LOG_DIR"/cmpid_track.map > /d/p/taint/sqlite3.cmpid.map && make clean
 
 # --- tcpdump (+ libpcap) ---------------------------------------------------
 # Keeps -fno-builtin: 0.8% timeouts, 0.47 s per seed, the fastest of cflow/sqlite3/tcpdump/ffmpeg.
@@ -70,7 +76,7 @@ RUN cd /unibench/libpcap-1.8.1 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     make clean && cd /unibench/libpcap-1.8.1 && make clean &&\
     USE_TRACK=1 make -j &&\
     cd /unibench/tcpdump-4.8.1 && USE_TRACK=1 make -j &&\
-    cp tcpdump /d/p/taint/ &&\
+    cp tcpdump /d/p/taint/ && cat "$ANGORA_PASS_LOG_DIR"/cmpid_track.map > /d/p/taint/tcpdump.cmpid.map &&\
     make clean && cd /unibench/libpcap-1.8.1 && make clean
 
 # --- ffmpeg ----------------------------------------------------------------
@@ -87,7 +93,7 @@ RUN cat /tmp/abilist.txt /tmp/ffmpeg_abilist.txt | tr -d '\r' > /tmp/abilist_ffm
 RUN cd /unibench/ffmpeg-4.0.1 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     export ANGORA_TAINT_RULE_LIST=/tmp/abilist_ffmpeg.txt &&\
     USE_TRACK=1 make -j$(nproc) &&\
-    cp ffmpeg_g /d/p/taint/ffmpeg && make clean
+    cp ffmpeg_g /d/p/taint/ffmpeg && cat "$ANGORA_PASS_LOG_DIR"/cmpid_track.map > /d/p/taint/ffmpeg.cmpid.map && make clean
 
 # --- jq --------------------------------------------------------------------
 # Keeps -fno-builtin: measured on the AFL++ corpora at 0.74 s per seed, well
@@ -96,7 +102,7 @@ RUN cd /unibench/ffmpeg-4.0.1 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
 RUN cd /unibench/jq-1.5 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./configure --disable-shared &&\
     make -j && cp jq /d/p/fast/ && make clean &&\
     USE_TRACK=1 make -j &&\
-    cp jq /d/p/taint/ && make clean
+    cp jq /d/p/taint/ && cat "$ANGORA_PASS_LOG_DIR"/cmpid_track.map > /d/p/taint/jq.cmpid.map && make clean
 
 # --- lame ------------------------------------------------------------------
 # Keeps -fno-builtin, and the revisit the comment here used to promise has
@@ -108,7 +114,7 @@ RUN cd /unibench/jq-1.5 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./configure --di
 RUN cd /unibench/lame-3.99.5 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./configure --disable-shared &&\
     make -j && cp frontend/lame /d/p/fast/ && make clean &&\
     USE_TRACK=1 make -j &&\
-    cp frontend/lame /d/p/taint/ && make clean
+    cp frontend/lame /d/p/taint/ && cat "$ANGORA_PASS_LOG_DIR"/cmpid_track.map > /d/p/taint/lame.cmpid.map && make clean
 
 # --- exiv2 -----------------------------------------------------------------
 # src/futils.cpp hand-declares the POSIX int-returning strerror_r whenever
@@ -126,7 +132,7 @@ RUN for l in libz libexpat; do \
     cmake -DEXIV2_ENABLE_SHARED=OFF . &&\
     make exiv2 -j && cp bin/exiv2 /d/p/fast/ && make clean &&\
     USE_TRACK=1 make exiv2 -j &&\
-    cp bin/exiv2 /d/p/taint/ && make clean
+    cp bin/exiv2 /d/p/taint/ && cat "$ANGORA_PASS_LOG_DIR"/cmpid_track.map > /d/p/taint/exiv2.cmpid.map && make clean
 
 # --- mp3gain ---------------------------------------------------------------
 # Keeps -fno-builtin, same finding as lame: ~46% of the server1 corpus times
@@ -137,7 +143,7 @@ RUN cd /unibench/mp3gain-1.5.2 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     sed -i 's/CC=/CC?=/' Makefile &&\
     make -j && cp mp3gain /d/p/fast/ && make clean &&\
     USE_TRACK=1 make -j &&\
-    cp mp3gain /d/p/taint/ && make clean
+    cp mp3gain /d/p/taint/ && cat "$ANGORA_PASS_LOG_DIR"/cmpid_track.map > /d/p/taint/mp3gain.cmpid.map && make clean
 
 # --- mujs ------------------------------------------------------------------
 # build/debug up front: the Makefile's mujs.pc rule doesn't depend on the
@@ -146,13 +152,13 @@ RUN cd /unibench/mp3gain-1.5.2 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
 RUN cd /unibench/mujs-1.0.2 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     mkdir -p build/debug && build=debug make -j && cp build/debug/mujs /d/p/fast/ && make clean &&\
     mkdir -p build/debug && USE_TRACK=1 build=debug make -j &&\
-    cp build/debug/mujs /d/p/taint/ && make clean
+    cp build/debug/mujs /d/p/taint/ && cat "$ANGORA_PASS_LOG_DIR"/cmpid_track.map > /d/p/taint/mujs.cmpid.map && make clean
 
 # --- pdftotext (xpdf) ------------------------------------------------------
 RUN cd /unibench/xpdf-4.00 && export ANGORA_PASS_LOG_DIR=$(pwd) && cmake . &&\
     make -j && cp xpdf/pdftotext /d/p/fast/ && make clean &&\
     USE_TRACK=1 make -j &&\
-    cp xpdf/pdftotext /d/p/taint/ && make clean
+    cp xpdf/pdftotext /d/p/taint/ && cat "$ANGORA_PASS_LOG_DIR"/cmpid_track.map > /d/p/taint/pdftotext.cmpid.map && make clean
 # The four below are the targets a forkserver_libafl saturation run produces
 # corpora for (seed/libafl_saturation_server4). All four keep -fno-builtin;
 # measured on those corpora, per seed and as the share left without usable
@@ -184,7 +190,7 @@ RUN /reusing-scanner/tools/gen_library_abilist.sh /usr/lib/x86_64-linux-gnu/libz
     ./autogen.sh && ./configure --disable-shared &&\
     make -j && cp tools/tiffsplit /d/p/fast/ && make clean &&\
     USE_TRACK=1 make -j &&\
-    cp tools/tiffsplit /d/p/taint/ && make clean
+    cp tools/tiffsplit /d/p/taint/ && cat "$ANGORA_PASS_LOG_DIR"/cmpid_track.map > /d/p/taint/tiffsplit.cmpid.map && make clean
 
 # --- jhead -----------------------------------------------------------------
 # CC goes on the make command line, not in the environment: jhead ships a
@@ -193,7 +199,7 @@ RUN /reusing-scanner/tools/gen_library_abilist.sh /usr/lib/x86_64-linux-gnu/libz
 RUN cd /unibench/jhead-3.00 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     make -j CC="$CC" && cp jhead /d/p/fast/ && make clean &&\
     USE_TRACK=1 make -j CC="$CC" &&\
-    cp jhead /d/p/taint/ && make clean
+    cp jhead /d/p/taint/ && cat "$ANGORA_PASS_LOG_DIR"/cmpid_track.map > /d/p/taint/jhead.cmpid.map && make clean
 
 # --- flvmeta (cmake) -------------------------------------------------------
 # cmake caches the compiler, not USE_TRACK, so the second pass only needs a
@@ -202,7 +208,7 @@ RUN cd /unibench/flvmeta-1.2.1 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     cmake . &&\
     make -j && cp src/flvmeta /d/p/fast/ && make clean &&\
     USE_TRACK=1 make -j &&\
-    cp src/flvmeta /d/p/taint/ && make clean
+    cp src/flvmeta /d/p/taint/ && cat "$ANGORA_PASS_LOG_DIR"/cmpid_track.map > /d/p/taint/flvmeta.cmpid.map && make clean
 
 # --- imginfo (jasper, cmake) -----------------------------------------------
 # ALLOW_IN_SOURCE_BUILD because the recipe builds in the source tree, as the
@@ -213,7 +219,7 @@ RUN cd /unibench/jasper-2.0.12 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     cmake -DJAS_ENABLE_SHARED=OFF -DALLOW_IN_SOURCE_BUILD=ON . &&\
     make -j && cp src/appl/imginfo /d/p/fast/ && make clean &&\
     USE_TRACK=1 make -j &&\
-    cp src/appl/imginfo /d/p/taint/ && make clean
+    cp src/appl/imginfo /d/p/taint/ && cat "$ANGORA_PASS_LOG_DIR"/cmpid_track.map > /d/p/taint/imginfo.cmpid.map && make clean
 
 # The five below complete the campaign target list (tools/volume/targets.conf).
 # Recipes follow aflplusplus-reusing-target's, with each target built twice
@@ -228,7 +234,7 @@ RUN cd /unibench/swftools-0.9.2 && export ANGORA_PASS_LOG_DIR=$(pwd) && ./config
     sed -i 's/byte inline PaethPredictor/byte PaethPredictor/' src/png2swf.c &&\
     make -j -C lib && make -C src wav2swf && cp src/wav2swf /d/p/fast/ && make clean &&\
     USE_TRACK=1 make -j -C lib && USE_TRACK=1 make -C src wav2swf &&\
-    cp src/wav2swf /d/p/taint/ && make clean
+    cp src/wav2swf /d/p/taint/ && cat "$ANGORA_PASS_LOG_DIR"/cmpid_track.map > /d/p/taint/wav2swf.cmpid.map && make clean
 
 # --- infotocap (ncurses tic) -----------------------------------------------
 # --without-cxx: the C++ binding demo is not needed, as in the other arms.
@@ -237,13 +243,13 @@ RUN cd /unibench/ncurses-6.1 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     ./configure --disable-shared --without-cxx &&\
     make -j && cp progs/tic /d/p/fast/infotocap && make clean &&\
     USE_TRACK=1 make -j &&\
-    cp progs/tic /d/p/taint/infotocap && make clean
+    cp progs/tic /d/p/taint/infotocap && cat "$ANGORA_PASS_LOG_DIR"/cmpid_track.map > /d/p/taint/infotocap.cmpid.map && make clean
 
 # --- mp42aac (Bento4, cmake) -----------------------------------------------
 RUN cd /unibench/Bento4-1.5.1-628 && export ANGORA_PASS_LOG_DIR=$(pwd) && cmake . &&\
     make -j mp42aac && cp mp42aac /d/p/fast/ && make clean &&\
     USE_TRACK=1 make -j mp42aac &&\
-    cp mp42aac /d/p/taint/ && make clean
+    cp mp42aac /d/p/taint/ && cat "$ANGORA_PASS_LOG_DIR"/cmpid_track.map > /d/p/taint/mp42aac.cmpid.map && make clean
 
 # --- nm (binutils-5279478) -------------------------------------------------
 # Upstream directory name, for the same reason as tiffsplit's block. The
@@ -265,7 +271,7 @@ RUN build_nm() { \
     cd /unibench/binutils_5279478 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     build_nm && cp nm-new /d/p/fast/nm &&\
     cd /tmp/nm_track && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
-    export USE_TRACK=1 && build_nm && cp nm-new /d/p/taint/nm &&\
+    export USE_TRACK=1 && build_nm && cp nm-new /d/p/taint/nm && cat "$ANGORA_PASS_LOG_DIR"/cmpid_track.map > /d/p/taint/nm.cmpid.map &&\
     rm -rf /tmp/nm_track
 
 # --- objdump (binutils-2.28) -----------------------------------------------
@@ -273,7 +279,7 @@ RUN cd /unibench/binutils-2.28 && export ANGORA_PASS_LOG_DIR=$(pwd) &&\
     ./configure --disable-shared LEXLIB= &&\
     make -j LEXLIB= && cp binutils/objdump /d/p/fast/ && make clean &&\
     USE_TRACK=1 make -j LEXLIB= &&\
-    cp binutils/objdump /d/p/taint/ && make clean
+    cp binutils/objdump /d/p/taint/ && cat "$ANGORA_PASS_LOG_DIR"/cmpid_track.map > /d/p/taint/objdump.cmpid.map && make clean
 
 # --- gdk_pixbuf_pixdata (gdk-pixbuf) ---------------------------------------
 # The configure flags of aflplusplus-reusing-target, and the image libraries
@@ -293,4 +299,4 @@ RUN apt-get update && apt-get install -y autopoint gettext gtk-doc-tools libglib
     ./autogen.sh --enable-static=yes --enable-shared=no --with-included-loaders=yes &&\
     make -j && cp gdk-pixbuf/gdk-pixbuf-pixdata /d/p/fast/gdk_pixbuf_pixdata && make clean &&\
     USE_TRACK=1 make -j &&\
-    cp gdk-pixbuf/gdk-pixbuf-pixdata /d/p/taint/gdk_pixbuf_pixdata && make clean
+    cp gdk-pixbuf/gdk-pixbuf-pixdata /d/p/taint/gdk_pixbuf_pixdata && cat "$ANGORA_PASS_LOG_DIR"/cmpid_track.map > /d/p/taint/gdk_pixbuf_pixdata.cmpid.map && make clean
