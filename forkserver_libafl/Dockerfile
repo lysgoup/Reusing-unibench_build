@@ -77,6 +77,12 @@ RUN cd /root/StorFuzz-LibAFL && git apply /forkserver_libafl_dryrun.patch
 COPY Reusing-unibench_build/forkserver_libafl/forkserver_libafl_sigint.patch /
 RUN cd /root/StorFuzz-LibAFL && git apply /forkserver_libafl_sigint.patch
 
+# Patch 6: record each corpus entry's origin -- its parent, the stage, the
+# havoc mutations -- in the entry's .metadata (src/origin.rs, the same file as
+# LibAFL_reusing's reusing_core/src/origin.rs). Changes nothing the fuzzer does.
+COPY Reusing-unibench_build/forkserver_libafl/forkserver_libafl_origin.patch /
+RUN cd /root/StorFuzz-LibAFL && git apply /forkserver_libafl_origin.patch
+
 # Patch Cargo.toml: add track_hit_feedbacks, sancov_cmplog, mimalloc
 RUN cd /root/StorFuzz-LibAFL/fuzzers/forkserver_libafl_cc && \
     sed -i 's|libafl = { path = "../../libafl/" }|libafl = { path = "../../libafl/", features = ["track_hit_feedbacks"] }|' Cargo.toml && \
